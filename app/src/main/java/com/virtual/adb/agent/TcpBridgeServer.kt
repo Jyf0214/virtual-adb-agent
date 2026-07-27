@@ -38,14 +38,14 @@ class TcpBridgeServer(
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_LOG_ENTRIES = 100
 
-        // ADB 协议命令
-        private const val CMD_CNXN = 0x4e584e43 // "CNXN"
-        private const val CMD_OPEN = 0x4e45504f // "OPEN"
-        private const val CMD_OKAY = 0x59414b4f // "OKAY"
-        private const val CMD_CLSE = 0x45534c43 // "CLSE"
-        private const val CMD_WRTE = 0x45545257 // "WRTE"
-        private const val CMD_AUTH = 0x48545541 // "AUTH"
-        private const val CMD_STLS = 0x534c5453 // "STLS"
+        // ADB 协议命令（小端序，DataInputStream.readInt() 读为大端）
+        private const val CMD_CNXN = 0x434e584e // "CNXN"
+        private const val CMD_OPEN = 0x4f50454e // "OPEN"
+        private const val CMD_OKAY = 0x4f4b4159 // "OKAY"
+        private const val CMD_CLSE = 0x434c5345 // "CLSE"
+        private const val CMD_WRTE = 0x57525445 // "WRTE"
+        private const val CMD_AUTH = 0x41555448 // "AUTH"
+        private const val CMD_STLS = 0x53544c53 // "STLS"
 
         // AUTH 类型
         private const val AUTH_TYPE_TOKEN = 1
@@ -528,17 +528,28 @@ class TcpBridgeServer(
             crc32.update(data)
         }
 
-        output.writeInt(command)
-        output.writeInt(arg0)
-        output.writeInt(arg1)
-        output.writeInt(dataLen)
-        output.writeInt(crc32.value.toInt())
-        output.writeInt(command xor -1) // magic = command XOR 0xFFFFFFFF
+        // ADB 协议使用小端序，DataOutputStream 是大端序，需手动写入
+        writeLeInt(output, command)
+        writeLeInt(output, arg0)
+        writeLeInt(output, arg1)
+        writeLeInt(output, dataLen)
+        writeLeInt(output, crc32.value.toInt())
+        writeLeInt(output, command xor -1) // magic = command XOR 0xFFFFFFFF
 
         if (data != null) {
             output.write(data)
         }
         output.flush()
+    }
+
+    /**
+     * 以小端序写入 4 字节整数（ADB 协议要求）
+     */
+    private fun writeLeInt(output: DataOutputStream, value: Int) {
+        output.write(value and 0xFF)
+        output.write((value shr 8) and 0xFF)
+        output.write((value shr 16) and 0xFF)
+        output.write((value shr 24) and 0xFF)
     }
 
     // ─── 日志 ──────────────────────────────────────
