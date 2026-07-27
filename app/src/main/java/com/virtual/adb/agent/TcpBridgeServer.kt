@@ -15,7 +15,6 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.ServerSocket
 import java.net.SocketException
-import java.util.zip.CRC32
 
 /**
  * ADB TCP 服务器
@@ -676,13 +675,15 @@ class TcpBridgeServer(
                 return null
             }
 
-            // 校验 CRC32
-            if (data != null) {
-                val crc = CRC32()
-                crc.update(data)
-                if (crc.value.toInt() != dataCrc32) {
-                    Log.w(TAG, "CRC32 校验失败: expected=0x${Integer.toHexString(dataCrc32)} " +
-                        "actual=0x${Integer.toHexString(crc.value.toInt())}")
+            // 校验和：ADB 使用无符号字节累加和（非 CRC32）
+            // 版本 >= 0x01000001 时跳过校验（A_VERSION_SKIP_CHECKSUM）
+            if (data != null && arg0 < 0x01000001) {
+                var calcSum = 0
+                for (b in data) {
+                    calcSum += (b.toInt() and 0xFF)
+                }
+                if (calcSum != dataCrc32) {
+                    Log.w(TAG, "校验和失败: expected=$dataCrc32 actual=$calcSum")
                     return null
                 }
             }
@@ -708,9 +709,12 @@ class TcpBridgeServer(
         data: ByteArray?
     ) {
         val dataLen = data?.size ?: 0
-        val crc32 = CRC32()
+        // ADB 校验和：无符号字节累加和
+        var byteSum = 0
         if (data != null) {
-            crc32.update(data)
+            for (b in data) {
+                byteSum += (b.toInt() and 0xFF)
+            }
         }
 
         // ADB 协议使用小端序，手动按字节写入
@@ -718,7 +722,7 @@ class TcpBridgeServer(
         writeLeInt(output, arg0)
         writeLeInt(output, arg1)
         writeLeInt(output, dataLen)
-        writeLeInt(output, crc32.value.toInt())
+        writeLeInt(output, byteSum)
         writeLeInt(output, command xor -1) // magic = command XOR 0xFFFFFFFF
 
         if (data != null) {
