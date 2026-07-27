@@ -13,6 +13,18 @@ import java.util.Date
 import java.util.Locale
 
 /**
+ * 崩溃信息数据类（顶层类，供 CrashActivity 等外部组件引用）
+ */
+data class CrashInfo(
+    val timestamp: String,
+    val threadName: String,
+    val exceptionClass: String,
+    val message: String,
+    val stackTrace: String,
+    val deviceInfo: String
+)
+
+/**
  * Application 类
  *
  * 全局持有 TcpBridgeServer 单例，供各组件共享。
@@ -31,15 +43,6 @@ class VirtualAdbApp : Application() {
         var lastCrashInfo: CrashInfo? = null
             internal set
     }
-
-    data class CrashInfo(
-        val timestamp: String,
-        val threadName: String,
-        val exceptionClass: String,
-        val message: String,
-        val stackTrace: String,
-        val deviceInfo: String
-    )
 
     override fun onCreate() {
         super.onCreate()
