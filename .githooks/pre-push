@@ -19,7 +19,7 @@ errors=0
 
 # ─── 获取本次推送涉及的文件 ──────────────────────────────────
 
-pushed_files=$(git diff --name-only @{upstream}..HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD)
+pushed_files=$(git diff --name-only @{upstream}..HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only $(git rev-list --max-parents=0 HEAD) HEAD)
 
 # ─── 1. Kotlin 语法检查 ─────────────────────────────────────
 
