@@ -247,9 +247,10 @@ class TcpBridgeServer(
             appendLog("→", clientAddr, "CNXN v=$version payload=$maxPayload")
 
             // TCP 连接无需认证，直接用 OKAY + 设备身份回复
+            // arg0 = 服务端 max payload，arg1 = 客户端 max payload
             val identity = buildDeviceIdentity()
-            writeMessage(output, CMD_OKAY, 0, 0, identity.toByteArray(Charsets.UTF_8))
-            appendLog("←", clientAddr, "OKAY 设备身份已发送")
+            writeMessage(output, CMD_OKAY, ADB_MAX_PAYLOAD, maxPayload, identity.toByteArray(Charsets.UTF_8))
+            appendLog("←", clientAddr, "OKAY payload=$ADB_MAX_PAYLOAD/$maxPayload")
             Log.i(TAG, "ADB 握手完成: $clientAddr, 设备身份: $identity")
 
             // 处理命令流
