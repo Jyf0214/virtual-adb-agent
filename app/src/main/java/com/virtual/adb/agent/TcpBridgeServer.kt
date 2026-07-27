@@ -38,7 +38,7 @@ class TcpBridgeServer(
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_LOG_ENTRIES = 100
 
-        // ADB 协议命令（小端序，DataInputStream.readInt() 读为大端）
+        // ADB 协议命令（整数常量，readLeInt 以小端序读取后得到正确值）
         private const val CMD_CNXN = 0x434e584e // "CNXN"
         private const val CMD_OPEN = 0x4f50454e // "OPEN"
         private const val CMD_OKAY = 0x4f4b4159 // "OKAY"
@@ -51,8 +51,6 @@ class TcpBridgeServer(
         private const val AUTH_TYPE_TOKEN = 1
         private const val AUTH_TYPE_SIGNATURE = 2
 
-        // 身份字符串
-        private const val DEVICE_IDENTITY = "virtual-adb-agent::.features=shell_v2"
     }
 
     /** 日志条目 */
@@ -229,31 +227,15 @@ class TcpBridgeServer(
 
             val version = cnxn.arg0
             val maxPayload = cnxn.arg1
-            val systemString = cnxn.data?.toString(Charsets.UTF_8) ?: ""
+            val systemString = cnxn.data?.toString(Charsets.UTF_8)?.trimEnd('\u0000') ?: ""
             Log.i(TAG, "CNXN: version=$version, maxPayload=$maxPayload, system=$systemString")
             appendLog("→", clientAddr, "CNXN v=$version payload=$maxPayload")
 
-            // 跳过 AUTH，直接发送 OKAY
-            val authData = ByteArray(20)
-            java.security.SecureRandom().nextBytes(authData)
-            writeMessage(output, CMD_AUTH, AUTH_TYPE_TOKEN, 0, authData)
-            appendLog("←", clientAddr, "AUTH token")
-
-            // 读取客户端 AUTH 响应
-            val authResponse = readMessage(input)
-            if (authResponse == null || authResponse.command != CMD_AUTH) {
-                appendLog("✗", clientAddr, "期望 AUTH，收到: ${commandName(authResponse?.command)}")
-                socket.close()
-                return
-            }
-            appendLog("→", clientAddr, "AUTH type=${authResponse.arg0}")
-
-            // 发送 OKAY 完成握手
-            val localId = 1
-            val remoteId = 0
-            writeMessage(output, CMD_OKAY, localId, remoteId, null)
-            appendLog("←", clientAddr, "OKAY 握手完成")
-            Log.i(TAG, "ADB 握手完成: $clientAddr")
+            // TCP 连接无需认证，直接用 OKAY + 设备身份回复
+            val identity = buildDeviceIdentity()
+            writeMessage(output, CMD_OKAY, 0, 0, identity.toByteArray(Charsets.UTF_8))
+            appendLog("←", clientAddr, "OKAY 设备身份已发送")
+            Log.i(TAG, "ADB 握手完成: $clientAddr, 设备身份: $identity")
 
             // 处理命令流
             while (socket.isConnected && !socket.isClosed) {
@@ -263,7 +245,10 @@ class TcpBridgeServer(
                     CMD_OPEN -> {
                         val openLocalId = msg.arg0
                         val openRemoteId = msg.arg1
-                        val service = msg.data?.toString(Charsets.UTF_8) ?: ""
+                        val service = msg.data?.let { raw ->
+                            val str = String(raw, Charsets.UTF_8)
+                            str.trimEnd('\u0000')
+                        } ?: ""
                         Log.i(TAG, "OPEN: local=$openLocalId remote=$openRemoteId service=$service")
                         appendLog("→", clientAddr, "OPEN $service")
 
@@ -275,7 +260,10 @@ class TcpBridgeServer(
                     CMD_WRTE -> {
                         val writeLocalId = msg.arg0
                         val writeRemoteId = msg.arg1
-                        val data = msg.data?.toString(Charsets.UTF_8) ?: ""
+                        val data = msg.data?.let { raw ->
+                            val str = String(raw, Charsets.UTF_8)
+                            str.trimEnd('\u0000')
+                        } ?: ""
                         Log.i(TAG, "WRTE: local=$writeLocalId remote=$writeRemoteId data=$data")
                         appendLog("→", clientAddr, "WRTE: $data.trimEnd()")
 
@@ -326,41 +314,71 @@ class TcpBridgeServer(
 
     // ─── ADB 命令处理 ──────────────────────────────────────
 
-    private suspend fun processAdbCommand(command: String, clientAddr: String): String {
+    private fun processAdbCommand(command: String, clientAddr: String): String {
         Log.d(TAG, "处理 ADB 命令: $command")
 
-        return when {
-            command.startsWith("input tap ") -> handleInputTap(command)
-            command.startsWith("input swipe ") -> handleInputSwipe(command)
-            command.startsWith("input text ") -> handleInputText(command)
-            command.startsWith("input keyevent ") -> handleInputKeyevent(command)
-            command == "screencap -p" || command == "screencap" -> handleScreencap()
-            command == "dumpsys window displays" || command == "wm size" -> handleWmSize()
-            command == "getevent -lp" -> handleGetEvent()
-            command == "wm density" -> handleWmDensity()
-            command.startsWith("am ") -> handleAm(command)
-            command.startsWith("pm ") -> handlePm(command)
-            command.startsWith("settings ") -> handleSettings(command)
-            command == "id" -> "uid=2000(shell) gid=2000(shell) groups=2000(shell)"
-            command == "whoami" -> "shell"
-            command == "echo OK" -> "OK"
-            command == "pwd" -> "/sdcard"
-            command.startsWith("ls ") || command == "ls" -> handleLs(command)
-            command.startsWith("cat ") -> "cat: ${command.removePrefix("cat ")}: Permission denied"
-            command == "uname -a" -> "Linux virtual-adb-agent 5.15.0 aarch64 GNU/Linux"
-            command == "getprop ro.build.version.sdk" -> "${android.os.Build.VERSION.SDK_INT}"
-            command == "getprop ro.product.model" -> android.os.Build.MODEL
-            command == "getprop ro.build.version.release" -> android.os.Build.VERSION.RELEASE
-            command.startsWith("getprop ") -> handleGetprop(command)
-            command == "date" -> java.text.SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", java.util.Locale.US).format(java.util.Date())
-            command == "sleep" || command.startsWith("sleep ") -> {
-                Thread.sleep(100)
-                ""
+        return try {
+            when {
+                // ── input 命令 ──
+                command.startsWith("input tap ") -> handleInputTap(command)
+                command.startsWith("input swipe ") -> handleInputSwipe(command)
+                command.startsWith("input text ") -> handleInputText(command)
+                command.startsWith("input keyevent ") -> handleInputKeyevent(command)
+                command == "input" || command.startsWith("input ") -> handleInputGeneric(command)
+
+                // ── 截图 ──
+                command == "screencap -p" || command == "screencap" -> handleScreencap()
+
+                // ── 窗口管理 ──
+                command == "dumpsys window displays" || command == "wm size" -> handleWmSize()
+                command == "wm density" -> handleWmDensity()
+                command == "wm" -> handleWmSize()
+
+                // ── 事件 ──
+                command == "getevent -lp" -> handleGetEvent()
+                command == "getevent" || command.startsWith("getevent ") -> handleGetEvent()
+
+                // ── 应用管理 ──
+                command.startsWith("am ") -> handleAm(command)
+                command.startsWith("pm ") -> handlePm(command)
+                command.startsWith("settings ") -> handleSettings(command)
+
+                // ── 文件系统 ──
+                command == "id" -> "uid=2000(shell) gid=2000(shell) groups=2000(shell)"
+                command == "whoami" -> "shell"
+                command == "echo OK" -> "OK"
+                command == "pwd" -> "/sdcard"
+                command.startsWith("ls ") || command == "ls" -> handleLs(command)
+                command.startsWith("cat ") -> handleCat(command)
+
+                // ── 系统信息 ──
+                command == "uname -a" -> "Linux virtual-adb-agent 5.15.0 ${android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "aarch64"} GNU/Linux"
+                command == "uname" -> "Linux"
+                command == "date" -> java.text.SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", java.util.Locale.US).format(java.util.Date())
+                command == "getserialno" -> android.os.Build.SERIAL ?: "unknown"
+
+                // ── sleep ──
+                command == "sleep" || command.startsWith("sleep ") -> {
+                    Thread.sleep(100)
+                    ""
+                }
+
+                // ── dumpsys ──
+                command.startsWith("dumpsys ") -> handleDumpsys(command)
+
+                // ── getprop ──
+                command == "getprop" -> handleGetpropAll()
+                command.startsWith("getprop ") -> handleGetprop(command)
+
+                // ── 未知命令 ──
+                else -> {
+                    Log.w(TAG, "不支持的 ADB 命令: $command")
+                    "virtual-adb-agent: '$command' not implemented"
+                }
             }
-            else -> {
-                Log.w(TAG, "不支持的 ADB 命令: $command")
-                "virtual-adb-agent: '$command' not implemented"
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "处理命令异常: $command", e)
+            "virtual-adb-agent: error processing '$command': ${e.message}"
         }
     }
 
@@ -404,17 +422,24 @@ class TcpBridgeServer(
     private fun handleInputText(command: String): String {
         val text = command.removePrefix("input text ")
         if (text.isEmpty()) return "usage: input text <string>"
-        // TODO: 通过 AccessibilityService 实现文本输入
         return "virtual-adb-agent: input text not yet implemented"
     }
 
     private fun handleInputKeyevent(command: String): String {
         val keyCode = command.removePrefix("input keyevent ")
-        // TODO: 通过 AccessibilityService 实现按键事件
         return "virtual-adb-agent: input keyevent not yet implemented"
     }
 
-    private suspend fun handleScreencap(): String {
+    private fun handleInputGeneric(command: String): String {
+        val parts = command.split("\\s+".toRegex())
+        return if (parts.size < 2) {
+            "Usage: input [text|keyevent|tap|swipe] ..."
+        } else {
+            "virtual-adb-agent: input ${parts[1]} not yet implemented"
+        }
+    }
+
+    private fun handleScreencap(): String {
         val service = screenCaptureService
             ?: return "screen capture service not running"
 
@@ -422,8 +447,9 @@ class TcpBridgeServer(
             return "screen capture not active"
         }
 
-        val jpegData = service.getLatestFrameJpeg(80)
-            ?: return "failed to capture screen"
+        val jpegData = kotlinx.coroutines.runBlocking {
+            service.getLatestFrameJpeg(80)
+        } ?: return "failed to capture screen"
 
         return android.util.Base64.encodeToString(jpegData, android.util.Base64.NO_WRAP)
     }
@@ -465,49 +491,179 @@ class TcpBridgeServer(
         return ""
     }
 
+    private fun handleCat(command: String): String {
+        val path = command.removePrefix("cat ").trim()
+        return when {
+            path == "/proc/version" ->
+                "Linux version 5.15.0-android-${android.os.Build.VERSION.SDK_INT} " +
+                "(virtual-adb-agent@localhost) (aarch64-linux-gnu-gcc) #1 SMP PREEMPT"
+            path == "/proc/cpuinfo" -> buildString {
+                appendLine("Processor\t: ${android.os.Build.HARDWARE}")
+                appendLine("model name\t: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                appendLine("Hardware\t: ${android.os.Build.BOARD}")
+                appendLine("CPU implementer\t: 0x61")
+                appendLine("CPU architecture: 8")
+                appendLine("BogoMIPS\t: 38.40")
+                appendLine("Features\t: fp asimd evtstrm aes pmull sha1 sha2 crc32")
+            }
+            path == "/proc/meminfo" -> buildString {
+                val runtime = Runtime.getRuntime()
+                val maxMem = runtime.maxMemory() / 1024
+                val totalMem = runtime.totalMemory() / 1024
+                val freeMem = runtime.freeMemory() / 1024
+                appendLine("MemTotal:       $maxMem kB")
+                appendLine("MemFree:        $freeMem kB")
+                appendLine("MemAvailable:   ${maxMem - totalMem + freeMem} kB")
+                appendLine("Buffers:        0 kB")
+                appendLine("Cached:         0 kB")
+            }
+            path.startsWith("/sys/") -> "Permission denied"
+            path.startsWith("/proc/") -> "Permission denied"
+            path.startsWith("/sdcard/") || path.startsWith("/storage/") -> "Permission denied"
+            else -> "cat: $path: No such file or directory"
+        }
+    }
+
+    private fun handleDumpsys(command: String): String {
+        val service = command.removePrefix("dumpsys ").trim()
+        return when {
+            service == "battery" || service.startsWith("battery ") -> buildString {
+                appendLine("Current Battery Service state:")
+                appendLine("  AC powered: false")
+                appendLine("  USB powered: true")
+                appendLine("  status: 2")
+                appendLine("  level: 100")
+                appendLine("  temperature: 250")
+            }
+            service.startsWith("window") -> handleWmSize()
+            service.startsWith("package") -> ""
+            service.startsWith("activity") -> ""
+            else -> ""
+        }
+    }
+
+    /**
+     * 列出所有已知的系统属性（getprop 无参数）
+     */
+    private fun handleGetpropAll(): String {
+        val props = linkedMapOf(
+            "ro.build.version.sdk" to "${android.os.Build.VERSION.SDK_INT}",
+            "ro.build.version.release" to android.os.Build.VERSION.RELEASE,
+            "ro.build.display.id" to android.os.Build.DISPLAY,
+            "ro.build.id" to android.os.Build.ID,
+            "ro.build.type" to android.os.Build.TYPE,
+            "ro.build.fingerprint" to android.os.Build.FINGERPRINT,
+            "ro.product.model" to android.os.Build.MODEL,
+            "ro.product.brand" to android.os.Build.BRAND,
+            "ro.product.device" to android.os.Build.DEVICE,
+            "ro.product.manufacturer" to android.os.Build.MANUFACTURER,
+            "ro.product.name" to android.os.Build.PRODUCT,
+            "ro.product.board" to android.os.Build.BOARD,
+            "ro.product.cpu.abi" to (android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"),
+            "ro.hardware" to android.os.Build.HARDWARE,
+            "ro.board.platform" to android.os.Build.BOARD,
+            "ro.build.version.codename" to android.os.Build.VERSION.CODENAME,
+            "ro.build.version.security_patch" to android.os.Build.VERSION.SECURITY_PATCH,
+            "ro.timezone" to java.util.TimeZone.getDefault().id,
+            "persist.sys.language" to java.util.Locale.getDefault().language,
+            "persist.sys.country" to java.util.Locale.getDefault().country,
+            "ro.boot.serialno" to (android.os.Build.SERIAL ?: "unknown")
+        )
+        return props.entries.joinToString("\n") { "[${it.key}]: [${it.value}]" }
+    }
+
     private fun handleGetprop(command: String): String {
         val prop = command.removePrefix("getprop ")
         return when (prop) {
             "ro.build.version.sdk" -> "${android.os.Build.VERSION.SDK_INT}"
-            "ro.product.model" -> android.os.Build.MODEL
             "ro.build.version.release" -> android.os.Build.VERSION.RELEASE
-            "ro.product.device" -> android.os.Build.DEVICE
-            "ro.product.brand" -> android.os.Build.BRAND
-            "ro.product.manufacturer" -> android.os.Build.MANUFACTURER
             "ro.build.display.id" -> android.os.Build.DISPLAY
             "ro.build.version.security_patch" -> android.os.Build.VERSION.SECURITY_PATCH
+            "ro.product.model" -> android.os.Build.MODEL
+            "ro.product.brand" -> android.os.Build.BRAND
+            "ro.product.device" -> android.os.Build.DEVICE
+            "ro.product.manufacturer" -> android.os.Build.MANUFACTURER
+            "ro.product.name" -> android.os.Build.PRODUCT
+            "ro.product.board" -> android.os.Build.BOARD
+            "ro.product.cpu.abi" -> android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
+            "ro.product.cpu.abilist" -> android.os.Build.SUPPORTED_ABIS.joinToString(",")
+            "ro.build.fingerprint" -> android.os.Build.FINGERPRINT
+            "ro.build.id" -> android.os.Build.ID
+            "ro.build.type" -> android.os.Build.TYPE
+            "ro.build.version.codename" -> android.os.Build.VERSION.CODENAME
+            "ro.hardware" -> android.os.Build.HARDWARE
+            "ro.board.platform" -> android.os.Build.BOARD
+            "ro.boot.serialno" -> android.os.Build.SERIAL
+            "persist.sys.language" -> java.util.Locale.getDefault().language
+            "persist.sys.country" -> java.util.Locale.getDefault().country
+            "ro.timezone" -> java.util.TimeZone.getDefault().id
+            "ro.build.version.preview_sdk" -> "${android.os.Build.VERSION.PREVIEW_SDK_INT}"
+            "gsm.version.baseband" -> ""
+            "gsm.version.radio" -> ""
             else -> ""
         }
+    }
+
+    /**
+     * 构建设备身份字符串
+     *
+     * ADB 协议 CNXN 回复中包含设备信息，格式为 key:value 对，用分号分隔。
+     * 客户端通过 adb devices -l 读取这些信息显示在设备列表中。
+     */
+    private fun buildDeviceIdentity(): String {
+        val props = mapOf(
+            "model" to android.os.Build.MODEL,
+            "device" to android.os.Build.DEVICE,
+            "product" to android.os.Build.PRODUCT,
+            "device_model" to android.os.Build.MODEL,
+            "device_manufacturer" to android.os.Build.MANUFACTURER,
+            "brand" to android.os.Build.BRAND,
+            "build_flavor" to android.os.Build.FINGERPRINT,
+            "build_id" to android.os.Build.ID,
+            "build_display_id" to android.os.Build.DISPLAY,
+            "build_version" to android.os.Build.VERSION.RELEASE,
+            "features" to "shell_v2"
+        )
+        return props.entries.joinToString(";") { "${it.key}:${it.value}" } + ";"
     }
 
     // ─── ADB 协议读写 ──────────────────────────────────────
 
     private fun readMessage(input: DataInputStream): AdbMessage? {
         return try {
-            val command = input.readInt()
-            val arg0 = input.readInt()
-            val arg1 = input.readInt()
-            val dataLength = input.readInt()
-            val dataCrc32 = input.readInt()
-            val magic = input.readInt()
+            // ADB 协议使用小端序，必须用 readLeInt 读取
+            val command = readLeInt(input)
+            val arg0 = readLeInt(input)
+            val arg1 = readLeInt(input)
+            val dataLength = readLeInt(input)
+            val dataCrc32 = readLeInt(input)
+            val magic = readLeInt(input)
 
-            val data = if (dataLength > 0) {
+            val data = if (dataLength > 0 && dataLength < ADB_MAX_PAYLOAD * 2) {
                 val buf = ByteArray(dataLength)
                 input.readFully(buf)
                 buf
             } else null
 
-            // 读取校验和后的对齐填充（如果需要）
-            // ADB 协议要求24字节头+数据后可能有对齐
-
-            val msg = AdbMessage(command, arg0, arg1, dataLength, dataCrc32, magic, data)
-
-            if (!msg.isValidMagic) {
-                Log.w(TAG, "无效 magic: command=${commandName(command)}, magic=$magic")
+            // 校验 magic：command XOR magic 应该全为 1（0xFFFFFFFF）
+            if ((command xor magic) != -1) {
+                Log.w(TAG, "无效 magic: command=${commandName(command)} " +
+                    "cmd=0x${Integer.toHexString(command)} magic=0x${Integer.toHexString(magic)}")
                 return null
             }
 
-            msg
+            // 校验 CRC32
+            if (data != null) {
+                val crc = CRC32()
+                crc.update(data)
+                if (crc.value.toInt() != dataCrc32) {
+                    Log.w(TAG, "CRC32 校验失败: expected=0x${Integer.toHexString(dataCrc32)} " +
+                        "actual=0x${Integer.toHexString(crc.value.toInt())}")
+                    return null
+                }
+            }
+
+            AdbMessage(command, arg0, arg1, dataLength, dataCrc32, magic, data)
         } catch (e: java.io.EOFException) {
             null
         } catch (e: SocketException) {
@@ -550,6 +706,28 @@ class TcpBridgeServer(
         output.write((value shr 8) and 0xFF)
         output.write((value shr 16) and 0xFF)
         output.write((value shr 24) and 0xFF)
+    }
+
+    /**
+     * 以小端序读取 4 字节整数（ADB 协议要求）
+     */
+    private fun readLeInt(input: DataInputStream): Int {
+        val b0 = input.readUnsignedByte()
+        val b1 = input.readUnsignedByte()
+        val b2 = input.readUnsignedByte()
+        val b3 = input.readUnsignedByte()
+        return b0 or (b1 shl 8) or (b2 shl 16) or (b3 shl 24)
+    }
+
+    /**
+     * 读取以空字符结尾的字符串（ADB 协议设备身份字符串）
+     */
+    private fun readLeString(input: DataInputStream, length: Int): String {
+        val buf = ByteArray(length)
+        input.readFully(buf)
+        val end = buf.indexOf(0)
+        return if (end >= 0) String(buf, 0, end, Charsets.UTF_8)
+        else String(buf, Charsets.UTF_8)
     }
 
     // ─── 日志 ──────────────────────────────────────

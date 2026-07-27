@@ -30,6 +30,14 @@
             </intent-filter>
         </activity>
 
+        <!-- 崩溃信息页面：由 UncaughtExceptionHandler 自动跳转 -->
+        <activity
+            android:name=".CrashActivity"
+            android:exported="false"
+            android:theme="@style/Theme.VirtualAdbAgent"
+            android:taskAffinity=""
+            android:excludeFromRecents="true" />
+
         <!-- 无障碍服务声明 -->
         <service
             android:name=".AccessibilityBridgeService"
