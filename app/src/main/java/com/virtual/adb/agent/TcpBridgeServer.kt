@@ -114,6 +114,10 @@ class TcpBridgeServer(
     /** 屏幕捕捉服务引用 */
     var screenCaptureService: ScreenCaptureService? = null
 
+    /** 上一次 readMessage 读到的原始 24 字节头（调试用） */
+    @Volatile
+    private var lastRawHeader: ByteArray? = null
+
     // ─── 服务器生命周期 ──────────────────────────────────────
 
     fun start() {
@@ -220,14 +224,18 @@ class TcpBridgeServer(
             // 读取 CNXN 握手
             val cnxn = readMessage(input)
             if (cnxn == null || cnxn.command != CMD_CNXN) {
+                // 显示原始字节和解析结果到 UI 日志面板
+                val rawHex = lastRawHeader?.joinToString(" ") {
+                    String.format("%02x", it)
+                } ?: "无"
                 val diag = if (cnxn != null) {
                     "cmd=0x${Integer.toHexString(cnxn.command)} " +
                         "arg0=${cnxn.arg0} arg1=${cnxn.arg1} len=${cnxn.dataLength}"
                 } else {
-                    "readMessage 返回 null（EOF 或协议错误，详见 logcat）"
+                    "readMessage 返回 null"
                 }
-                Log.w(TAG, "握手失败 [$clientAddr]: $diag")
                 appendLog("✗", clientAddr, "握手失败: $diag")
+                appendLog("✗", clientAddr, "原始24字节: $rawHex")
                 socket.close()
                 return
             }
@@ -650,9 +658,7 @@ class TcpBridgeServer(
             val dataCrc32 = bytesToLeInt(headerBytes, 16)
             val magic = bytesToLeInt(headerBytes, 20)
 
-            Log.d(TAG, "收到消息头: cmd=0x${Integer.toHexString(command)} " +
-                "arg0=$arg0 arg1=$arg1 len=$dataLength " +
-                "crc=0x${Integer.toHexString(dataCrc32)} magic=0x${Integer.toHexString(magic)}")
+            lastRawHeader = headerBytes
             Log.d(TAG, "原始字节: ${headerBytes.joinToString(" ") {
                 String.format("%02x", it)
             }}")
