@@ -32,19 +32,19 @@ class TcpBridgeServer(
 
     companion object {
         private const val TAG = "TcpBridgeServer"
-        private const val ADB_VERSION = 0x01000000
-        private const val ADB_MAX_PAYLOAD = 4096
+        private const val ADB_VERSION = 0x01000001
+        private const val ADB_MAX_PAYLOAD = 1048576
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_LOG_ENTRIES = 100
 
-        // ADB 协议命令（小端序整数常量）
-        private const val CMD_CNXN = 0x434e584e // "CNXN"
-        private const val CMD_OPEN = 0x4f50454e // "OPEN"
-        private const val CMD_OKAY = 0x4f4b4159 // "OKAY"
-        private const val CMD_CLSE = 0x434c5345 // "CLSE"
-        private const val CMD_WRTE = 0x57525445 // "WRTE"
-        private const val CMD_AUTH = 0x41555448 // "AUTH"
-        private const val CMD_STLS = 0x53544c53 // "STLS"
+        // ADB 协议命令（小端序：bytesToLeInt 解析后的值）
+        private const val CMD_CNXN = 0x4e584e43 // "CNXN" 小端序
+        private const val CMD_OPEN = 0x4e45504f // "OPEN" 小端序
+        private const val CMD_OKAY = 0x59414b4f // "OKAY" 小端序
+        private const val CMD_CLSE = 0x45534c43 // "CLSE" 小端序
+        private const val CMD_WRTE = 0x45545257 // "WRTE" 小端序
+        private const val CMD_AUTH = 0x48545541 // "AUTH" 小端序
+        private const val CMD_STLS = 0x534c5453 // "STLS" 小端序
 
         // AUTH 类型
         private const val AUTH_TYPE_TOKEN = 1
