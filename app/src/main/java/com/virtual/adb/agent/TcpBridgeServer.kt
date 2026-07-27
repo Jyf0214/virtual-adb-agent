@@ -256,7 +256,7 @@ class TcpBridgeServer(
             Log.i(TAG, "ADB 握手完成: $clientAddr")
 
             // 处理命令流
-            while (socket.isConnected && !socket.isClosed && isActive) {
+            while (socket.isConnected && !socket.isClosed) {
                 val msg = readMessage(input) ?: break
 
                 when (msg.command) {
@@ -326,7 +326,7 @@ class TcpBridgeServer(
 
     // ─── ADB 命令处理 ──────────────────────────────────────
 
-    private fun processAdbCommand(command: String, clientAddr: String): String {
+    private suspend fun processAdbCommand(command: String, clientAddr: String): String {
         Log.d(TAG, "处理 ADB 命令: $command")
 
         return when {
@@ -414,7 +414,7 @@ class TcpBridgeServer(
         return "virtual-adb-agent: input keyevent not yet implemented"
     }
 
-    private fun handleScreencap(): String {
+    private suspend fun handleScreencap(): String {
         val service = screenCaptureService
             ?: return "screen capture service not running"
 
