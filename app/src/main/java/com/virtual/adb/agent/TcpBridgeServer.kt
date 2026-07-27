@@ -5,27 +5,26 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONException
-import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.OutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.net.ServerSocket
 import java.net.SocketException
+import java.util.zip.CRC32
 
 /**
- * TCP 桥接服务器
+ * ADB TCP 服务器
  *
- * 监听 127.0.0.1:10000，接收 JSON 命令并分发到
- * AccessibilityBridgeService 或 ScreenCaptureService 执行。
+ * 实现 ADB 协议，监听 127.0.0.1:10000，允许标准 ADB 客户端
+ * 通过无障碍服务和屏幕捕捉执行有限 ADB 功能。
+ *
+ * 使用方式：adb connect 127.0.0.1:10000
+ * 支持命令：input tap/swipe、screencap、getevent 等
  */
 class TcpBridgeServer(
     private val port: Int = 10000,
@@ -34,16 +33,57 @@ class TcpBridgeServer(
 
     companion object {
         private const val TAG = "TcpBridgeServer"
+        private const val ADB_VERSION = 0x01000000
+        private const val ADB_MAX_PAYLOAD = 4096
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_LOG_ENTRIES = 100
+
+        // ADB 协议命令
+        private const val CMD_CNXN = 0x4e584e43 // "CNXN"
+        private const val CMD_OPEN = 0x4e45504f // "OPEN"
+        private const val CMD_OKAY = 0x59414b4f // "OKAY"
+        private const val CMD_CLSE = 0x45534c43 // "CLSE"
+        private const val CMD_WRTE = 0x45545257 // "WRTE"
+        private const val CMD_AUTH = 0x48545541 // "AUTH"
+        private const val CMD_STLS = 0x534c5453 // "STLS"
+
+        // AUTH 类型
+        private const val AUTH_TYPE_TOKEN = 1
+        private const val AUTH_TYPE_SIGNATURE = 2
+
+        // 身份字符串
+        private const val DEVICE_IDENTITY = "virtual-adb-agent::.features=shell_v2"
     }
 
     /** 日志条目 */
     data class LogEntry(
         val timestamp: Long = System.currentTimeMillis(),
-        val direction: String,  // "→" 收到, "←" 发送
+        val direction: String,
         val client: String,
         val content: String
+    )
+
+    /** ADB 消息 */
+    data class AdbMessage(
+        val command: Int,
+        val arg0: Int,
+        val arg1: Int,
+        val dataLength: Int,
+        val dataCrc32: Int,
+        val magic: Int,
+        val data: ByteArray? = null
+    ) {
+        val checksum: Int
+            get() = dataCrc32
+        val isValidMagic: Boolean
+            get() = (command xor magic) == -1 // 0xFFFFFFFF
+    }
+
+    /** 流状态 */
+    private class StreamState(
+        val localId: Int,
+        val remoteId: Int,
+        val service: String
     )
 
     /** 服务运行状态 */
@@ -54,7 +94,7 @@ class TcpBridgeServer(
     private val _clientCount = MutableStateFlow(0)
     val clientCount: StateFlow<Int> = _clientCount.asStateFlow()
 
-    /** TCP 服务器绑定的端口（支持动态端口时使用） */
+    /** TCP 服务器绑定的端口 */
     private val _boundPort = MutableStateFlow(port)
     val boundPort: StateFlow<Int> = _boundPort.asStateFlow()
 
@@ -70,17 +110,15 @@ class TcpBridgeServer(
     private var serverJob: Job? = null
     private var serverSocket: ServerSocket? = null
 
-    /** 无障碍服务引用（由 MainActivity 注入） */
+    /** 无障碍服务引用 */
     var accessibilityService: AccessibilityBridgeService? = null
 
-    /** 屏幕捕捉服务引用（由 MainActivity 注入） */
+    /** 屏幕捕捉服务引用 */
     var screenCaptureService: ScreenCaptureService? = null
 
-    /**
-     * 启动 TCP 服务器
-     */
+    // ─── 服务器生命周期 ──────────────────────────────────────
+
     fun start() {
-        // 单例保护：如果已有 ServerSocket 且未关闭，直接返回
         val existing = serverSocket
         if (existing != null && existing.isBound && !existing.isClosed) {
             Log.w(TAG, "服务器已在运行中（端口 ${existing.localPort}），跳过重复启动")
@@ -88,22 +126,20 @@ class TcpBridgeServer(
             return
         }
 
-        // 先清理旧实例
         stopInternal()
 
         _startError.value = "正在启动..."
-        Log.i(TAG, "尝试启动 TCP 服务器，端口: $port")
+        Log.i(TAG, "尝试启动 ADB TCP 服务器，端口: $port")
 
         serverJob = serverScope.launch {
             try {
-                // 在 IO 线程中绑定 IPv4 地址，开启端口复用
                 withContext(Dispatchers.IO) {
-                    val inetAddress = java.net.InetAddress.getByName("127.0.0.1")
+                    val inetAddress = java.net.InetAddress.getByName(host)
                     val socket = ServerSocket()
                     socket.reuseAddress = true
                     socket.bind(java.net.InetSocketAddress(inetAddress, port))
                     serverSocket = socket
-                    Log.i(TAG, "已绑定 127.0.0.1:$port，reuseAddress=true")
+                    Log.i(TAG, "已绑定 $host:$port，reuseAddress=true")
                 }
 
                 val boundAddr = serverSocket!!.inetAddress?.hostAddress ?: "unknown"
@@ -111,16 +147,17 @@ class TcpBridgeServer(
                 _boundPort.value = boundPort
                 _isRunning.value = true
                 _startError.value = ""
-                Log.i(TAG, "TCP 服务器启动成功，监听 $boundAddr:$boundPort")
+                Log.i(TAG, "ADB TCP 服务器启动成功，监听 $boundAddr:$boundPort")
 
                 while (isActive) {
                     try {
                         val clientSocket = serverSocket?.accept() ?: break
-                        Log.i(TAG, "新客户端连接: ${clientSocket.inetAddress}")
-                        appendLog("→", "${clientSocket.inetAddress.hostAddress}:${clientSocket.port}", "客户端已连接")
+                        val clientAddr = "${clientSocket.inetAddress.hostAddress}:${clientSocket.port}"
+                        Log.i(TAG, "新 ADB 客户端连接: $clientAddr")
+                        appendLog("→", clientAddr, "ADB 客户端已连接")
 
                         launch {
-                            handleClient(clientSocket)
+                            handleAdbClient(clientSocket, clientAddr)
                         }
                     } catch (e: SocketException) {
                         if (isActive) {
@@ -130,40 +167,34 @@ class TcpBridgeServer(
                 }
             } catch (e: java.net.BindException) {
                 val msg = "端口绑定失败: ${e.message}"
-                Log.e(TAG, "TCP 服务器启动失败", e)
+                Log.e(TAG, "服务器启动失败", e)
                 _isRunning.value = false
                 _startError.value = msg
             } catch (e: java.net.SocketException) {
                 val msg = "Socket 错误: ${e.message}"
-                Log.e(TAG, "TCP 服务器启动失败", e)
+                Log.e(TAG, "服务器启动失败", e)
                 _isRunning.value = false
                 _startError.value = msg
             } catch (e: SecurityException) {
                 val msg = "安全权限不足: ${e.message}"
-                Log.e(TAG, "TCP 服务器启动失败", e)
+                Log.e(TAG, "服务器启动失败", e)
                 _isRunning.value = false
                 _startError.value = msg
             } catch (e: Exception) {
                 val msg = "启动失败: ${e.javaClass.simpleName} - ${e.message}"
-                Log.e(TAG, "TCP 服务器启动失败", e)
+                Log.e(TAG, "服务器启动失败", e)
                 _isRunning.value = false
                 _startError.value = msg
             }
         }
     }
 
-    /**
-     * 停止 TCP 服务器（公开接口）
-     */
     fun stop() {
         stopInternal()
         _startError.value = ""
-        Log.i(TAG, "TCP 服务器已停止")
+        Log.i(TAG, "ADB TCP 服务器已停止")
     }
 
-    /**
-     * 内部停止逻辑
-     */
     private fun stopInternal() {
         _isRunning.value = false
         serverJob?.cancel()
@@ -177,53 +208,341 @@ class TcpBridgeServer(
         _clientCount.value = 0
     }
 
-    // ─── 客户端处理 ──────────────────────────────────────────
+    // ─── ADB 客户端处理 ──────────────────────────────────────
 
-    private suspend fun handleClient(socket: java.net.Socket) {
+    private suspend fun handleAdbClient(socket: java.net.Socket, clientAddr: String) {
         _clientCount.value = _clientCount.value + 1
-        val clientAddr = "${socket.inetAddress.hostAddress}:${socket.port}"
+        val streams = mutableMapOf<Int, StreamState>() // localId -> StreamState
 
         try {
             socket.soTimeout = READ_TIMEOUT_MS
-            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-            val outputStream = socket.getOutputStream()
+            val input = DataInputStream(socket.getInputStream())
+            val output = DataOutputStream(socket.getOutputStream())
 
-            appendLog("→", clientAddr, "客户端已连接")
+            // 读取 CNXN 握手
+            val cnxn = readMessage(input)
+            if (cnxn == null || cnxn.command != CMD_CNXN) {
+                appendLog("✗", clientAddr, "期望 CNXN，收到: ${commandName(cnxn?.command)}")
+                socket.close()
+                return
+            }
 
-            while (socket.isConnected && !socket.isClosed) {
-                val line = reader.readLine() ?: break
-                if (line.isBlank()) continue
+            val version = cnxn.arg0
+            val maxPayload = cnxn.arg1
+            val systemString = cnxn.data?.toString(Charsets.UTF_8) ?: ""
+            Log.i(TAG, "CNXN: version=$version, maxPayload=$maxPayload, system=$systemString")
+            appendLog("→", clientAddr, "CNXN v=$version payload=$maxPayload")
 
-                Log.d(TAG, "收到命令: $line")
-                appendLog("→", clientAddr, line)
+            // 跳过 AUTH，直接发送 OKAY
+            val authData = ByteArray(20)
+            java.security.SecureRandom().nextBytes(authData)
+            writeMessage(output, CMD_AUTH, AUTH_TYPE_TOKEN, 0, authData)
+            appendLog("←", clientAddr, "AUTH token")
 
-                val response = processCommand(line)
-                Log.d(TAG, "发送响应: $response")
-                appendLog("←", clientAddr, response)
+            // 读取客户端 AUTH 响应
+            val authResponse = readMessage(input)
+            if (authResponse == null || authResponse.command != CMD_AUTH) {
+                appendLog("✗", clientAddr, "期望 AUTH，收到: ${commandName(authResponse?.command)}")
+                socket.close()
+                return
+            }
+            appendLog("→", clientAddr, "AUTH type=${authResponse.arg0}")
 
-                withContext(Dispatchers.IO) {
-                    outputStream.write((response + "\n").toByteArray())
-                    outputStream.flush()
+            // 发送 OKAY 完成握手
+            val localId = 1
+            val remoteId = 0
+            writeMessage(output, CMD_OKAY, localId, remoteId, null)
+            appendLog("←", clientAddr, "OKAY 握手完成")
+            Log.i(TAG, "ADB 握手完成: $clientAddr")
+
+            // 处理命令流
+            while (socket.isConnected && !socket.isClosed && isActive) {
+                val msg = readMessage(input) ?: break
+
+                when (msg.command) {
+                    CMD_OPEN -> {
+                        val openLocalId = msg.arg0
+                        val openRemoteId = msg.arg1
+                        val service = msg.data?.toString(Charsets.UTF_8) ?: ""
+                        Log.i(TAG, "OPEN: local=$openLocalId remote=$openRemoteId service=$service")
+                        appendLog("→", clientAddr, "OPEN $service")
+
+                        streams[openLocalId] = StreamState(openLocalId, openRemoteId, service)
+                        writeMessage(output, CMD_OKAY, openLocalId, openRemoteId, null)
+                        appendLog("←", clientAddr, "OKAY stream=$openLocalId")
+                    }
+
+                    CMD_WRTE -> {
+                        val writeLocalId = msg.arg0
+                        val writeRemoteId = msg.arg1
+                        val data = msg.data?.toString(Charsets.UTF_8) ?: ""
+                        Log.i(TAG, "WRTE: local=$writeLocalId remote=$writeRemoteId data=$data")
+                        appendLog("→", clientAddr, "WRTE: $data.trimEnd()")
+
+                        val stream = streams[writeLocalId]
+                        if (stream != null) {
+                            val response = processAdbCommand(data.trimEnd(), clientAddr)
+                            appendLog("←", clientAddr, response.trimEnd())
+
+                            // 发送 WRTE 响应数据
+                            val responseData = response.toByteArray(Charsets.UTF_8)
+                            writeMessage(output, CMD_WRTE, writeLocalId, writeRemoteId, responseData)
+                            writeMessage(output, CMD_OKAY, writeLocalId, writeRemoteId, null)
+                        } else {
+                            writeMessage(output, CMD_CLSE, writeLocalId, writeRemoteId, null)
+                        }
+                    }
+
+                    CMD_CLSE -> {
+                        val closeLocalId = msg.arg0
+                        val closeRemoteId = msg.arg1
+                        streams.remove(closeLocalId)
+                        Log.i(TAG, "CLSE: local=$closeLocalId")
+                        appendLog("→", clientAddr, "CLSE stream=$closeLocalId")
+
+                        writeMessage(output, CMD_CLSE, closeRemoteId, closeLocalId, null)
+                    }
+
+                    else -> {
+                        Log.w(TAG, "未知命令: ${commandName(msg.command)}")
+                        appendLog("✗", clientAddr, "未知命令: ${commandName(msg.command)}")
+                    }
                 }
             }
         } catch (e: SocketException) {
             appendLog("✗", clientAddr, "连接断开: ${e.message}")
-            Log.d(TAG, "客户端断开连接: ${socket.inetAddress}")
+            Log.d(TAG, "ADB 客户端断开连接: $clientAddr")
         } catch (e: Exception) {
             appendLog("✗", clientAddr, "异常: ${e.message}")
-            Log.e(TAG, "处理客户端异常", e)
+            Log.e(TAG, "处理 ADB 客户端异常", e)
         } finally {
             try {
                 socket.close()
             } catch (_: Exception) {}
             _clientCount.value = (_clientCount.value - 1).coerceAtLeast(0)
-            Log.d(TAG, "客户端处理结束，当前连接数: ${_clientCount.value}")
+            Log.d(TAG, "ADB 客户端处理结束，当前连接数: ${_clientCount.value}")
         }
     }
 
-    /**
-     * 添加日志条目
-     */
+    // ─── ADB 命令处理 ──────────────────────────────────────
+
+    private fun processAdbCommand(command: String, clientAddr: String): String {
+        Log.d(TAG, "处理 ADB 命令: $command")
+
+        return when {
+            command.startsWith("input tap ") -> handleInputTap(command)
+            command.startsWith("input swipe ") -> handleInputSwipe(command)
+            command.startsWith("input text ") -> handleInputText(command)
+            command.startsWith("input keyevent ") -> handleInputKeyevent(command)
+            command == "screencap -p" || command == "screencap" -> handleScreencap()
+            command == "dumpsys window displays" || command == "wm size" -> handleWmSize()
+            command == "getevent -lp" -> handleGetEvent()
+            command == "wm density" -> handleWmDensity()
+            command.startsWith("am ") -> handleAm(command)
+            command.startsWith("pm ") -> handlePm(command)
+            command.startsWith("settings ") -> handleSettings(command)
+            command == "id" -> "uid=2000(shell) gid=2000(shell) groups=2000(shell)"
+            command == "whoami" -> "shell"
+            command == "echo OK" -> "OK"
+            command == "pwd" -> "/sdcard"
+            command.startsWith("ls ") || command == "ls" -> handleLs(command)
+            command.startsWith("cat ") -> "cat: ${command.removePrefix("cat ")}: Permission denied"
+            command == "uname -a" -> "Linux virtual-adb-agent 5.15.0 aarch64 GNU/Linux"
+            command == "getprop ro.build.version.sdk" -> "${android.os.Build.VERSION.SDK_INT}"
+            command == "getprop ro.product.model" -> android.os.Build.MODEL
+            command == "getprop ro.build.version.release" -> android.os.Build.VERSION.RELEASE
+            command.startsWith("getprop ") -> handleGetprop(command)
+            command == "date" -> java.text.SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", java.util.Locale.US).format(java.util.Date())
+            command == "sleep" || command.startsWith("sleep ") -> {
+                Thread.sleep(100)
+                ""
+            }
+            else -> {
+                Log.w(TAG, "不支持的 ADB 命令: $command")
+                "virtual-adb-agent: '$command' not implemented"
+            }
+        }
+    }
+
+    private fun handleInputTap(command: String): String {
+        val parts = command.split("\\s+".toRegex())
+        if (parts.size < 4) return "usage: input tap <x> <y>"
+
+        val x = parts[2].toFloatOrNull() ?: return "invalid x: ${parts[2]}"
+        val y = parts[3].toFloatOrNull() ?: return "invalid y: ${parts[3]}"
+
+        val service = accessibilityService
+            ?: return "accessibility service not connected"
+
+        if (!service.isActive()) {
+            return "accessibility service not active"
+        }
+
+        return service.injectClick(x, y)
+    }
+
+    private fun handleInputSwipe(command: String): String {
+        val parts = command.split("\\s+".toRegex())
+        if (parts.size < 6) return "usage: input swipe <x1> <y1> <x2> <y2> [duration]"
+
+        val x1 = parts[2].toFloatOrNull() ?: return "invalid x1: ${parts[2]}"
+        val y1 = parts[3].toFloatOrNull() ?: return "invalid y1: ${parts[3]}"
+        val x2 = parts[4].toFloatOrNull() ?: return "invalid x2: ${parts[4]}"
+        val y2 = parts[5].toFloatOrNull() ?: return "invalid y2: ${parts[5]}"
+        val duration = parts.getOrNull(6)?.toLongOrNull() ?: 300L
+
+        val service = accessibilityService
+            ?: return "accessibility service not connected"
+
+        if (!service.isActive()) {
+            return "accessibility service not active"
+        }
+
+        return service.injectSwipe(x1, y1, x2, y2, duration)
+    }
+
+    private fun handleInputText(command: String): String {
+        val text = command.removePrefix("input text ")
+        if (text.isEmpty()) return "usage: input text <string>"
+        // TODO: 通过 AccessibilityService 实现文本输入
+        return "virtual-adb-agent: input text not yet implemented"
+    }
+
+    private fun handleInputKeyevent(command: String): String {
+        val keyCode = command.removePrefix("input keyevent ")
+        // TODO: 通过 AccessibilityService 实现按键事件
+        return "virtual-adb-agent: input keyevent not yet implemented"
+    }
+
+    private fun handleScreencap(): String {
+        val service = screenCaptureService
+            ?: return "screen capture service not running"
+
+        if (!service.isActive.value) {
+            return "screen capture not active"
+        }
+
+        val jpegData = service.getLatestFrameJpeg(80)
+            ?: return "failed to capture screen"
+
+        return android.util.Base64.encodeToString(jpegData, android.util.Base64.NO_WRAP)
+    }
+
+    private fun handleWmSize(): String {
+        return "Physical size: 1080x2340"
+    }
+
+    private fun handleWmDensity(): String {
+        return "Physical density: 440"
+    }
+
+    private fun handleGetEvent(): String {
+        // 返回空的事件列表，表示没有物理输入设备
+        return ""
+    }
+
+    private fun handleAm(command: String): String {
+        return when {
+            command.startsWith("am start ") -> "virtual-adb-agent: am start not implemented"
+            command.startsWith("am force-stop ") -> "virtual-adb-agent: am force-stop not implemented"
+            else -> "virtual-adb-agent: am command not implemented"
+        }
+    }
+
+    private fun handlePm(command: String): String {
+        return when {
+            command == "pm list packages" -> ""
+            command.startsWith("pm path ") -> ""
+            else -> "virtual-adb-agent: pm command not implemented"
+        }
+    }
+
+    private fun handleSettings(command: String): String {
+        return "virtual-adb-agent: settings command not implemented"
+    }
+
+    private fun handleLs(command: String): String {
+        return ""
+    }
+
+    private fun handleGetprop(command: String): String {
+        val prop = command.removePrefix("getprop ")
+        return when (prop) {
+            "ro.build.version.sdk" -> "${android.os.Build.VERSION.SDK_INT}"
+            "ro.product.model" -> android.os.Build.MODEL
+            "ro.build.version.release" -> android.os.Build.VERSION.RELEASE
+            "ro.product.device" -> android.os.Build.DEVICE
+            "ro.product.brand" -> android.os.Build.BRAND
+            "ro.product.manufacturer" -> android.os.Build.MANUFACTURER
+            "ro.build.display.id" -> android.os.Build.DISPLAY
+            "ro.build.version.security_patch" -> android.os.Build.VERSION.SECURITY_PATCH
+            else -> ""
+        }
+    }
+
+    // ─── ADB 协议读写 ──────────────────────────────────────
+
+    private fun readMessage(input: DataInputStream): AdbMessage? {
+        return try {
+            val command = input.readInt()
+            val arg0 = input.readInt()
+            val arg1 = input.readInt()
+            val dataLength = input.readInt()
+            val dataCrc32 = input.readInt()
+            val magic = input.readInt()
+
+            val data = if (dataLength > 0) {
+                val buf = ByteArray(dataLength)
+                input.readFully(buf)
+                buf
+            } else null
+
+            // 读取校验和后的对齐填充（如果需要）
+            // ADB 协议要求24字节头+数据后可能有对齐
+
+            val msg = AdbMessage(command, arg0, arg1, dataLength, dataCrc32, magic, data)
+
+            if (!msg.isValidMagic) {
+                Log.w(TAG, "无效 magic: command=${commandName(command)}, magic=$magic")
+                return null
+            }
+
+            msg
+        } catch (e: java.io.EOFException) {
+            null
+        } catch (e: SocketException) {
+            null
+        }
+    }
+
+    private fun writeMessage(
+        output: DataOutputStream,
+        command: Int,
+        arg0: Int,
+        arg1: Int,
+        data: ByteArray?
+    ) {
+        val dataLen = data?.size ?: 0
+        val crc32 = CRC32()
+        if (data != null) {
+            crc32.update(data)
+        }
+
+        output.writeInt(command)
+        output.writeInt(arg0)
+        output.writeInt(arg1)
+        output.writeInt(dataLen)
+        output.writeInt(crc32.value.toInt())
+        output.writeInt(command xor -1) // magic = command XOR 0xFFFFFFFF
+
+        if (data != null) {
+            output.write(data)
+        }
+        output.flush()
+    }
+
+    // ─── 日志 ──────────────────────────────────────
+
     private fun appendLog(direction: String, client: String, content: String) {
         val entry = LogEntry(direction = direction, client = client, content = content)
         val current = _logs.value.toMutableList()
@@ -234,123 +553,20 @@ class TcpBridgeServer(
         _logs.value = current
     }
 
-    /**
-     * 清空日志
-     */
     fun clearLogs() {
         _logs.value = emptyList()
     }
 
-    // ─── 命令解析与分发 ──────────────────────────────────────
-
-    /**
-     * 解析并执行 JSON 命令
-     */
-    private suspend fun processCommand(rawJson: String): String {
-        return try {
-            val json = JSONObject(rawJson)
-            val action = json.optString("action", "")
-
-            when (action) {
-                "click" -> handleClick(json)
-                "swipe" -> handleSwipe(json)
-                "screencap" -> handleScreencap(json)
-                "ping" -> handlePing()
-                else -> errorResponse("unknown action: $action")
-            }
-        } catch (e: JSONException) {
-            errorResponse("invalid JSON: ${e.message}")
-        } catch (e: Exception) {
-            errorResponse("command error: ${e.message}")
+    private fun commandName(cmd: Int?): String {
+        return when (cmd) {
+            CMD_CNXN -> "CNXN"
+            CMD_OPEN -> "OPEN"
+            CMD_OKAY -> "OKAY"
+            CMD_CLSE -> "CLSE"
+            CMD_WRTE -> "WRTE"
+            CMD_AUTH -> "AUTH"
+            CMD_STLS -> "STLS"
+            else -> "UNKNOWN(0x${Integer.toHexString(cmd ?: 0)})"
         }
-    }
-
-    /**
-     * 处理点击命令
-     *
-     * 请求: {"action": "click", "x": 500, "y": 300}
-     */
-    private fun handleClick(json: JSONObject): String {
-        val service = accessibilityService
-            ?: return errorResponse("accessibility service not connected")
-
-        if (!service.isActive()) {
-            return errorResponse("accessibility service not active")
-        }
-
-        val x = json.optDouble("x", Double.NaN).toFloat()
-        val y = json.optDouble("y", Double.NaN).toFloat()
-
-        if (x.isNaN() || y.isNaN()) {
-            return errorResponse("missing or invalid x/y coordinates")
-        }
-
-        return service.injectClick(x, y)
-    }
-
-    /**
-     * 处理滑动命令
-     *
-     * 请求: {"action": "swipe", "x1": 100, "y1": 800, "x2": 100, "y2": 200, "duration": 300}
-     */
-    private fun handleSwipe(json: JSONObject): String {
-        val service = accessibilityService
-            ?: return errorResponse("accessibility service not connected")
-
-        if (!service.isActive()) {
-            return errorResponse("accessibility service not active")
-        }
-
-        val x1 = json.optDouble("x1", Double.NaN).toFloat()
-        val y1 = json.optDouble("y1", Double.NaN).toFloat()
-        val x2 = json.optDouble("x2", Double.NaN).toFloat()
-        val y2 = json.optDouble("y2", Double.NaN).toFloat()
-        val duration = json.optLong("duration", 300L)
-
-        if (x1.isNaN() || y1.isNaN() || x2.isNaN() || y2.isNaN()) {
-            return errorResponse("missing or invalid coordinates")
-        }
-
-        return service.injectSwipe(x1, y1, x2, y2, duration)
-    }
-
-    /**
-     * 处理截图命令
-     *
-     * 请求: {"action": "screencap", "quality": 80}
-     * 响应: base64 编码的 JPEG 数据
-     */
-    private suspend fun handleScreencap(json: JSONObject): String {
-        val service = screenCaptureService
-            ?: return errorResponse("screen capture service not running")
-
-        if (!service.isActive.value) {
-            return errorResponse("screen capture not active")
-        }
-
-        val quality = json.optInt("quality", 80).coerceIn(1, 100)
-        val jpegData = service.getLatestFrameJpeg(quality)
-            ?: return errorResponse("failed to capture screen")
-
-        val base64 = android.util.Base64.encodeToString(jpegData, android.util.Base64.NO_WRAP)
-        return """{"status": "ok", "image": "$base64"}"""
-    }
-
-    /**
-     * 处理心跳/查询命令
-     *
-     * 请求: {"action": "ping"}
-     */
-    private fun handlePing(): String {
-        val a11yActive = accessibilityService?.isActive() == true
-        val captureActive = screenCaptureService?.isActive?.value == true
-        return """{"status": "ok", "a11y_active": $a11yActive, "capture_active": $captureActive}"""
-    }
-
-    /**
-     * 生成错误响应
-     */
-    private fun errorResponse(message: String): String {
-        return """{"status": "error", "message": "$message"}"""
     }
 }
