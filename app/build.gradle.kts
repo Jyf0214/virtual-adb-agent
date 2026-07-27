@@ -16,21 +16,6 @@ android {
         versionName = "1.0.0"
     }
 
-    val keystoreFile = rootProject.file("keystore/debug.jks")
-    if (keystoreFile.exists()) {
-        signingConfigs {
-            create("debug") {
-                storeFile = keystoreFile
-                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "android"
-                keyAlias = System.getenv("KEY_ALIAS") ?: "androiddebugkey"
-                keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
-            }
-        }
-        buildTypes.debug {
-            signingConfig = signingConfigs.getByName("debug")
-        }
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
