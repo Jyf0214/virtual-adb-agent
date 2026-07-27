@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Virtual ADB Agent</string>
+    <string name="accessibility_service_description">Virtual ADB Agent 需要无障碍权限来执行点击、滑动等自动化手势操作。此服务仅监听本地 TCP 连接的指令，不会上传任何数据。</string>
+    <string name="notification_channel_name">屏幕捕捉服务</string>
+    <string name="notification_channel_description">用于维持屏幕捕捉的前台服务通知</string>
+    <string name="foreground_service_title">屏幕捕捉运行中</string>
+    <string name="foreground_service_text">正在为本地 TCP 客户端提供屏幕截图</string>
+</resources>

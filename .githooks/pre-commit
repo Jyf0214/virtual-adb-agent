@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+#
+# pre-commit hook — 检查代码格式与语法
+#
+# 检查内容：
+#   1. Kotlin 文件语法（ktlint）
+#   2. XML 文件格式（xmllint）
+#   3. 不允许提交包含敏感信息的文件
+#
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+errors=0
+
+# ─── 获取暂存的文件 ──────────────────────────────────────────
+
+staged_kt=$(git diff --cached --name-only --diff-filter=ACM -- '*.kt' '*.kts')
+staged_xml=$(git diff --cached --name-only --diff-filter=ACM -- '*.xml')
+
+# ─── 1. Kotlin 格式检查（ktlint）────────────────────────────
+
+if [ -n "$staged_kt" ]; then
+    echo -e "${YELLOW}▸ 检查 Kotlin 格式...${NC}"
+
+    if command -v ktlint &>/dev/null; then
+        # 使用系统安装的 ktlint
+        if echo "$staged_kt" | xargs ktlint --relative --disabled_rules=standard:no-wildcard-imports; then
+            echo -e "  ${GREEN}✓ Kotlin 格式检查通过${NC}"
+        else
+            echo -e "  ${RED}✗ Kotlin 格式有问题，请修复后重新提交${NC}"
+            echo -e "  ${YELLOW}  提示: 运行 'ktlint --format' 自动修复${NC}"
+            errors=$((errors + 1))
+        fi
+    elif [ -f "./gradlew" ]; then
+        # 回退到 Gradle ktlint 插件（如果已配置）
+        if ./gradlew ktlintCheck --quiet 2>/dev/null; then
+            echo -e "  ${GREEN}✓ Kotlin 格式检查通过${NC}"
+        else
+            echo -e "  ${RED}✗ Kotlin 格式有问题，请修复后重新提交${NC}"
+            echo -e "  ${YELLOW}  提示: 运行 './gradlew ktlintFormat' 自动修复${NC}"
+            errors=$((errors + 1))
+        fi
+    else
+        # 最低限度：检查是否有明显的语法错误
+        echo -e "  ${YELLOW}⚠ 未找到 ktlint，执行基础语法检查...${NC}"
+        for f in $staged_kt; do
+            if [ -f "$f" ]; then
+                # 检查括号匹配
+                open=$(grep -o '{' "$f" | wc -l)
+                close=$(grep -o '}' "$f" | wc -l)
+                if [ "$open" -ne "$close" ]; then
+                    echo -e "  ${RED}✗ $f: 括号不匹配 ( { = $open, } = $close )${NC}"
+                    errors=$((errors + 1))
+                fi
+                # 检查括号匹配
+                open_paren=$(grep -o '(' "$f" | wc -l)
+                close_paren=$(grep -o ')' "$f" | wc -l)
+                if [ "$open_paren" -ne "$close_paren" ]; then
+                    echo -e "  ${RED}✗ $f: 圆括号不匹配 ( ( = $open_paren, ) = $close_paren )${NC}"
+                    errors=$((errors + 1))
+                fi
+            fi
+        done
+        if [ "$errors" -eq 0 ]; then
+            echo -e "  ${GREEN}✓ 基础语法检查通过${NC}"
+        fi
+    fi
+fi
+
+# ─── 2. XML 格式检查 ────────────────────────────────────────
+
+if [ -n "$staged_xml" ]; then
+    echo -e "${YELLOW}▸ 检查 XML 格式...${NC}"
+
+    if command -v xmllint &>/dev/null; then
+        xml_errors=0
+        for f in $staged_xml; do
+            if [ -f "$f" ]; then
+                if ! xmllint --noout "$f" 2>/dev/null; then
+                    echo -e "  ${RED}✗ $f: XML 格式错误${NC}"
+                    xml_errors=$((xml_errors + 1))
+                fi
+            fi
+        done
+        if [ "$xml_errors" -eq 0 ]; then
+            echo -e "  ${GREEN}✓ XML 格式检查通过${NC}"
+        else
+            errors=$((errors + xml_errors))
+        fi
+    else
+        # 没有 xmllint 时做基础检查
+        echo -e "  ${YELLOW}⚠ 未找到 xmllint，执行基础 XML 检查...${NC}"
+        for f in $staged_xml; do
+            if [ -f "$f" ]; then
+                # 检查是否是有效的 XML 开头
+                first_line=$(head -1 "$f")
+                if ! echo "$first_line" | grep -q '<?xml'; then
+                    echo -e "  ${YELLOW}⚠ $f: 编码声明缺失${NC}"
+                fi
+            fi
+        done
+        echo -e "  ${GREEN}✓ 基础 XML 检查通过${NC}"
+    fi
+fi
+
+# ─── 3. 敏感信息检查 ────────────────────────────────────────
+
+echo -e "${YELLOW}▸ 检查敏感信息...${NC}"
+secret_patterns=(
+    'password\s*=\s*"[^"]+"'
+    'api[_-]?key\s*=\s*"[^"]+"'
+    'secret\s*=\s*"[^"]+"'
+    'token\s*=\s*"[^"]+"'
+    'PRIVATE KEY'
+    'BEGIN RSA'
+    'BEGIN EC PRIVATE'
+)
+
+secret_found=0
+for f in $staged_kt $staged_xml; do
+    if [ -f "$f" ]; then
+        for pattern in "${secret_patterns[@]}"; do
+            if grep -qiE "$pattern" "$f" 2>/dev/null; then
+                match=$(grep -iE "$pattern" "$f" | head -1)
+                echo -e "  ${RED}✗ $f: 疑似包含敏感信息${NC}"
+                echo -e "    ${match}"
+                secret_found=$((secret_found + 1))
+            fi
+        done
+    fi
+done
+
+if [ "$secret_found" -eq 0 ]; then
+    echo -e "  ${GREEN}✓ 未发现敏感信息${NC}"
+else
+    errors=$((errors + secret_found))
+fi
+
+# ─── 汇总结果 ────────────────────────────────────────────────
+
+echo ""
+if [ "$errors" -gt 0 ]; then
+    echo -e "${RED}═══ 提交被阻止: 发现 $errors 个问题 ═══${NC}"
+    echo -e "${YELLOW}修复后重新执行 'git commit'${NC}"
+    exit 1
+else
+    echo -e "${GREEN}═══ 所有检查通过 ✓ ═══${NC}"
+    exit 0
+fi

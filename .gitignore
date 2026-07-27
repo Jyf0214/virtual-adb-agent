@@ -1,0 +1,59 @@
+# Node.js
+node_modules/
+package-lock.json
+yarn.lock
+
+# 旧沙箱文件
+.codesandbox/
+.devcontainer/
+index.js
+
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+release/
+
+# Gradle files
+.gradle/
+build/
+app/build/
+
+# Local configuration file
+local.properties
+
+# Android Studio
+.idea/
+*.iml
+*.iws
+*.ipr
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Keystore
+*.jks
+*.keystore
+
+# Google Services
+google-services.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Qwen
+.qwen/

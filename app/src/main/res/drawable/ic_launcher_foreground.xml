@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 背景圆 -->
+    <path
+        android:fillColor="#1A1A2E"
+        android:pathData="M54,54m-54,0a54,54 0,1 1,108 0a54,54 0,1 1,-108 0" />
+    <!-- A 字母 -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M40,70L54,30L68,70L62,70L57,55L51,55L46,70ZM53,50L55,42L57,50Z" />
+    <!-- 箭头符号 -->
+    <path
+        android:fillColor="#2196F3"
+        android:pathData="M70,40L80,54L70,68M75,54L55,54"
+        android:strokeWidth="3"
+        android:strokeColor="#2196F3" />
+</vector>
