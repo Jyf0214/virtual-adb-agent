@@ -26,20 +26,20 @@ class VirtualAdbApp : Application() {
         /** TCP 服务器单例 */
         val tcpServer = TcpBridgeServer()
 
-        /** 崩溃信息：线程名 → 异常堆栈 */
+        /** 崩溃信息 */
         @Volatile
         var lastCrashInfo: CrashInfo? = null
-            private set
-
-        data class CrashInfo(
-            val timestamp: String,
-            val threadName: String,
-            val exceptionClass: String,
-            val message: String,
-            val stackTrace: String,
-            val deviceInfo: String
-        )
+            internal set
     }
+
+    data class CrashInfo(
+        val timestamp: String,
+        val threadName: String,
+        val exceptionClass: String,
+        val message: String,
+        val stackTrace: String,
+        val deviceInfo: String
+    )
 
     override fun onCreate() {
         super.onCreate()

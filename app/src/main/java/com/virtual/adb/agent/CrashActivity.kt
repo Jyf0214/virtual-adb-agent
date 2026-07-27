@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -60,8 +61,9 @@ class CrashActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CrashScreen(crashInfo: VirtualAdbApp.CrashInfo?) {
+private fun CrashScreen(crashInfo: CrashInfo?) {
     val context = LocalContext.current
 
     Scaffold(
@@ -91,25 +93,27 @@ private fun CrashScreen(crashInfo: VirtualAdbApp.CrashInfo?) {
             ) {
                 Button(
                     onClick = {
-                        val text = crashInfo?.let {
+                        val reportText = if (crashInfo != null) {
                             buildString {
                                 appendLine("=== 应用崩溃报告 ===")
-                                appendLine("时间: ${it.timestamp}")
-                                appendLine("线程: ${it.threadName}")
-                                appendLine("异常: ${it.exceptionClass}")
-                                appendLine("消息: ${it.message}")
+                                appendLine("时间: ${crashInfo.timestamp}")
+                                appendLine("线程: ${crashInfo.threadName}")
+                                appendLine("异常: ${crashInfo.exceptionClass}")
+                                appendLine("消息: ${crashInfo.message}")
                                 appendLine()
                                 appendLine("=== 堆栈跟踪 ===")
-                                appendLine(it.stackTrace)
+                                appendLine(crashInfo.stackTrace)
                                 appendLine()
                                 appendLine("=== 设备信息 ===")
-                                append(it.deviceInfo)
+                                append(crashInfo.deviceInfo)
                             }
-                        } ?: "无崩溃信息"
+                        } else {
+                            "无崩溃信息"
+                        }
 
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
                             as ClipboardManager
-                        val clip = ClipData.newPlainText("crash_report", text)
+                        val clip = ClipData.newPlainText("crash_report", reportText)
                         clipboard.setPrimaryClip(clip)
                         Toast.makeText(context, "崩溃报告已复制到剪贴板", Toast.LENGTH_SHORT).show()
                     },
