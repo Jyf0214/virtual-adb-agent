@@ -220,7 +220,14 @@ class TcpBridgeServer(
             // 读取 CNXN 握手
             val cnxn = readMessage(input)
             if (cnxn == null || cnxn.command != CMD_CNXN) {
-                appendLog("✗", clientAddr, "期望 CNXN，收到: ${commandName(cnxn?.command)}")
+                val diag = if (cnxn != null) {
+                    "cmd=0x${Integer.toHexString(cnxn.command)} " +
+                        "arg0=${cnxn.arg0} arg1=${cnxn.arg1} len=${cnxn.dataLength}"
+                } else {
+                    "readMessage 返回 null（EOF 或协议错误，详见 logcat）"
+                }
+                Log.w(TAG, "握手失败 [$clientAddr]: $diag")
+                appendLog("✗", clientAddr, "握手失败: $diag")
                 socket.close()
                 return
             }
@@ -631,13 +638,24 @@ class TcpBridgeServer(
 
     private fun readMessage(input: DataInputStream): AdbMessage? {
         return try {
-            // ADB 协议使用小端序，必须用 readLeInt 读取
-            val command = readLeInt(input)
-            val arg0 = readLeInt(input)
-            val arg1 = readLeInt(input)
-            val dataLength = readLeInt(input)
-            val dataCrc32 = readLeInt(input)
-            val magic = readLeInt(input)
+            // 先读取 24 字节头的原始数据，用于调试
+            val headerBytes = ByteArray(24)
+            input.readFully(headerBytes)
+
+            // 以小端序解析各字段
+            val command = bytesToLeInt(headerBytes, 0)
+            val arg0 = bytesToLeInt(headerBytes, 4)
+            val arg1 = bytesToLeInt(headerBytes, 8)
+            val dataLength = bytesToLeInt(headerBytes, 12)
+            val dataCrc32 = bytesToLeInt(headerBytes, 16)
+            val magic = bytesToLeInt(headerBytes, 20)
+
+            Log.d(TAG, "收到消息头: cmd=0x${Integer.toHexString(command)} " +
+                "arg0=$arg0 arg1=$arg1 len=$dataLength " +
+                "crc=0x${Integer.toHexString(dataCrc32)} magic=0x${Integer.toHexString(magic)}")
+            Log.d(TAG, "原始字节: ${headerBytes.joinToString(" ") {
+                String.format("%02x", it)
+            }}")
 
             val data = if (dataLength > 0 && dataLength < ADB_MAX_PAYLOAD * 2) {
                 val buf = ByteArray(dataLength)
@@ -665,8 +683,13 @@ class TcpBridgeServer(
 
             AdbMessage(command, arg0, arg1, dataLength, dataCrc32, magic, data)
         } catch (e: java.io.EOFException) {
+            Log.w(TAG, "读取消息失败: EOF（客户端可能已断开）")
             null
         } catch (e: SocketException) {
+            Log.w(TAG, "读取消息失败: Socket 异常 - ${e.message}")
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "读取消息异常", e)
             null
         }
     }
@@ -709,7 +732,7 @@ class TcpBridgeServer(
     }
 
     /**
-     * 以小端序读取 4 字节整数（ADB 协议要求）
+     * 以小端序读取 4 字节整数（从 DataInputStream）
      */
     private fun readLeInt(input: DataInputStream): Int {
         val b0 = input.readUnsignedByte()
@@ -717,6 +740,16 @@ class TcpBridgeServer(
         val b2 = input.readUnsignedByte()
         val b3 = input.readUnsignedByte()
         return b0 or (b1 shl 8) or (b2 shl 16) or (b3 shl 24)
+    }
+
+    /**
+     * 以小端序从字节数组中解析 4 字节整数
+     */
+    private fun bytesToLeInt(bytes: ByteArray, offset: Int): Int {
+        return (bytes[offset].toInt() and 0xFF) or
+            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
     }
 
     /**
