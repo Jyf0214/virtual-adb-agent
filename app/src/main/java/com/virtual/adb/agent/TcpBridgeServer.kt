@@ -38,7 +38,7 @@ class TcpBridgeServer(
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_LOG_ENTRIES = 100
 
-        // ADB 协议命令（整数常量，readLeInt 以小端序读取后得到正确值）
+        // ADB 协议命令（大端序整数常量）
         private const val CMD_CNXN = 0x434e584e // "CNXN"
         private const val CMD_OPEN = 0x4f50454e // "OPEN"
         private const val CMD_OKAY = 0x4f4b4159 // "OKAY"
@@ -646,17 +646,16 @@ class TcpBridgeServer(
 
     private fun readMessage(input: DataInputStream): AdbMessage? {
         return try {
-            // 先读取 24 字节头的原始数据，用于调试
+            // 读取 24 字节头，以大端序解析各字段
             val headerBytes = ByteArray(24)
             input.readFully(headerBytes)
 
-            // 以小端序解析各字段
-            val command = bytesToLeInt(headerBytes, 0)
-            val arg0 = bytesToLeInt(headerBytes, 4)
-            val arg1 = bytesToLeInt(headerBytes, 8)
-            val dataLength = bytesToLeInt(headerBytes, 12)
-            val dataCrc32 = bytesToLeInt(headerBytes, 16)
-            val magic = bytesToLeInt(headerBytes, 20)
+            val command = bytesToBeInt(headerBytes, 0)
+            val arg0 = bytesToBeInt(headerBytes, 4)
+            val arg1 = bytesToBeInt(headerBytes, 8)
+            val dataLength = bytesToBeInt(headerBytes, 12)
+            val dataCrc32 = bytesToBeInt(headerBytes, 16)
+            val magic = bytesToBeInt(headerBytes, 20)
 
             lastRawHeader = headerBytes
             Log.d(TAG, "原始字节: ${headerBytes.joinToString(" ") {
@@ -713,13 +712,13 @@ class TcpBridgeServer(
             crc32.update(data)
         }
 
-        // ADB 协议使用小端序，DataOutputStream 是大端序，需手动写入
-        writeLeInt(output, command)
-        writeLeInt(output, arg0)
-        writeLeInt(output, arg1)
-        writeLeInt(output, dataLen)
-        writeLeInt(output, crc32.value.toInt())
-        writeLeInt(output, command xor -1) // magic = command XOR 0xFFFFFFFF
+        // ADB 协议使用大端序，DataOutputStream.writeInt() 正好是大端序
+        output.writeInt(command)
+        output.writeInt(arg0)
+        output.writeInt(arg1)
+        output.writeInt(dataLen)
+        output.writeInt(crc32.value.toInt())
+        output.writeInt(command xor -1) // magic = command XOR 0xFFFFFFFF
 
         if (data != null) {
             output.write(data)
@@ -728,34 +727,13 @@ class TcpBridgeServer(
     }
 
     /**
-     * 以小端序写入 4 字节整数（ADB 协议要求）
+     * 以大端序从字节数组中解析 4 字节整数（ADB 协议使用大端序）
      */
-    private fun writeLeInt(output: DataOutputStream, value: Int) {
-        output.write(value and 0xFF)
-        output.write((value shr 8) and 0xFF)
-        output.write((value shr 16) and 0xFF)
-        output.write((value shr 24) and 0xFF)
-    }
-
-    /**
-     * 以小端序读取 4 字节整数（从 DataInputStream）
-     */
-    private fun readLeInt(input: DataInputStream): Int {
-        val b0 = input.readUnsignedByte()
-        val b1 = input.readUnsignedByte()
-        val b2 = input.readUnsignedByte()
-        val b3 = input.readUnsignedByte()
-        return b0 or (b1 shl 8) or (b2 shl 16) or (b3 shl 24)
-    }
-
-    /**
-     * 以小端序从字节数组中解析 4 字节整数
-     */
-    private fun bytesToLeInt(bytes: ByteArray, offset: Int): Int {
-        return (bytes[offset].toInt() and 0xFF) or
-            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
-            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
-            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+    private fun bytesToBeInt(bytes: ByteArray, offset: Int): Int {
+        return ((bytes[offset].toInt() and 0xFF) shl 24) or
+            ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
+            ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
+            (bytes[offset + 3].toInt() and 0xFF)
     }
 
     /**
