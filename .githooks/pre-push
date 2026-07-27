@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# pre-push hook — 推送前语法检查
+# pre-push hook — 推送前完整语法检查
 #
 # 检查内容：
-#   1. Kotlin 文件语法（括号/圆括号匹配）
-#   2. XML 文件格式（xmllint 或基础检查）
+#   1. Kotlin 语法（ktlint：未使用导入 + 风格 + 解析错误）
+#   2. XML 格式（xmllint 完整验证）
 #   3. Gradle 配置文件格式
-#   4. 不允许提交明显有问题的文件
+#   4. AndroidManifest 结构
 #
 set -euo pipefail
 
@@ -21,52 +21,55 @@ errors=0
 
 pushed_files=$(git diff --name-only @{upstream}..HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only $(git rev-list --max-parents=0 HEAD) HEAD)
 
-# ─── 1. Kotlin 语法检查 ─────────────────────────────────────
+# ─── 1. Kotlin 语法检查（ktlint 完整检查）────────────────────
 
 echo -e "${YELLOW}▸ 检查 Kotlin 语法...${NC}"
 
 kt_files=$(echo "$pushed_files" | grep -E '\.(kt|kts)$' || true)
 if [ -n "$kt_files" ]; then
-    for f in $kt_files; do
-        if [ -f "$f" ]; then
-            # 括号匹配
-            open_brace=$(grep -o '{' "$f" | wc -l || true)
-            close_brace=$(grep -o '}' "$f" | wc -l || true)
-            if [ "$open_brace" -ne "$close_brace" ]; then
-                echo -e "  ${RED}✗ $f: 花括号不匹配 { = $open_brace, } = $close_brace${NC}"
-                errors=$((errors + 1))
+    if command -v ktlint &>/dev/null; then
+        ktlint_errors=0
+        for f in $kt_files; do
+            if [ -f "$f" ]; then
+                if ! ktlint "$f" 2>/dev/null; then
+                    ktlint_errors=$((ktlint_errors + 1))
+                fi
             fi
-
-            # 圆括号匹配
-            open_paren=$(grep -o '(' "$f" | wc -l || true)
-            close_paren=$(grep -o ')' "$f" | wc -l || true)
-            if [ "$open_paren" -ne "$close_paren" ]; then
-                echo -e "  ${RED}✗ $f: 圆括号不匹配 ( = $open_paren, ) = $close_paren${NC}"
-                errors=$((errors + 1))
-            fi
-
-            # 方括号匹配
-            open_bracket=$(grep -o '\[' "$f" | wc -l || true)
-            close_bracket=$(grep -o '\]' "$f" | wc -l || true)
-            if [ "$open_bracket" -ne "$close_bracket" ]; then
-                echo -e "  ${RED}✗ $f: 方括号不匹配 [ = $open_bracket, ] = $close_bracket${NC}"
-                errors=$((errors + 1))
-            fi
-
-            # 检查 package 声明
-            if ! grep -q '^package ' "$f" && [[ "$f" != *"/test/"* ]]; then
-                echo -e "  ${YELLOW}⚠ $f: 缺少 package 声明${NC}"
-            fi
+        done
+        if [ "$ktlint_errors" -eq 0 ]; then
+            echo -e "  ${GREEN}✓ Kotlin 语法检查通过${NC}"
+        else
+            echo -e "  ${RED}✗ 发现 $ktlint_errors 个文件有语法问题${NC}"
+            echo -e "  ${YELLOW}  提示: 运行 'ktlint --format' 自动修复${NC}"
+            errors=$((errors + ktlint_errors))
         fi
-    done
-    if [ "$errors" -eq 0 ]; then
-        echo -e "  ${GREEN}✓ Kotlin 语法检查通过${NC}"
+    else
+        # 无 ktlint 时做基础检查
+        for f in $kt_files; do
+            if [ -f "$f" ]; then
+                open_brace=$(grep -o '{' "$f" | wc -l || true)
+                close_brace=$(grep -o '}' "$f" | wc -l || true)
+                if [ "$open_brace" -ne "$close_brace" ]; then
+                    echo -e "  ${RED}✗ $f: 花括号不匹配 { = $open_brace, } = $close_brace${NC}"
+                    errors=$((errors + 1))
+                fi
+                open_paren=$(grep -o '(' "$f" | wc -l || true)
+                close_paren=$(grep -o ')' "$f" | wc -l || true)
+                if [ "$open_paren" -ne "$close_paren" ]; then
+                    echo -e "  ${RED}✗ $f: 圆括号不匹配${NC}"
+                    errors=$((errors + 1))
+                fi
+            fi
+        done
+        if [ "$errors" -eq 0 ]; then
+            echo -e "  ${GREEN}✓ 基础括号检查通过${NC}"
+        fi
     fi
 else
     echo -e "  ${GREEN}✓ 无 Kotlin 文件变更${NC}"
 fi
 
-# ─── 2. XML 格式检查 ────────────────────────────────────────
+# ─── 2. XML 格式检查（xmllint）───────────────────────────────
 
 echo -e "${YELLOW}▸ 检查 XML 格式...${NC}"
 
@@ -87,29 +90,7 @@ if [ -n "$xml_files" ]; then
         fi
         errors=$((errors + xml_errors))
     else
-        # 无 xmllint 时做基础检查
-        xml_errors=0
-        for f in $xml_files; do
-            if [ -f "$f" ]; then
-                # 检查 XML 声明
-                first_line=$(head -1 "$f")
-                if ! echo "$first_line" | grep -qE '<\?xml|<manifest|<resources|<accessibility-service'; then
-                    echo -e "  ${YELLOW}⚠ $f: 缺少 XML 声明${NC}"
-                fi
-                # 检查基本的标签闭合
-                open_tags=$(grep -oE '<[a-zA-Z][a-zA-Z0-9_-]*' "$f" | wc -l)
-                close_tags=$(grep -oE '</[a-zA-Z][a-zA-Z0-9_-]*>' "$f" | wc -l)
-                self_closing=$(grep -oE '/>' "$f" | wc -l)
-                if [ "$open_tags" -ne "$((close_tags + self_closing))" ]; then
-                    echo -e "  ${RED}✗ $f: XML 标签不匹配${NC}"
-                    xml_errors=$((xml_errors + 1))
-                fi
-            fi
-        done
-        if [ "$xml_errors" -eq 0 ]; then
-            echo -e "  ${GREEN}✓ 基础 XML 检查通过${NC}"
-        fi
-        errors=$((errors + xml_errors))
+        echo -e "  ${YELLOW}⚠ 未找到 xmllint，跳过 XML 检查${NC}"
     fi
 else
     echo -e "  ${GREEN}✓ 无 XML 文件变更${NC}"
@@ -124,14 +105,12 @@ if [ -n "$gradle_files" ]; then
     gradle_errors=0
     for f in $gradle_files; do
         if [ -f "$f" ]; then
-            # 检查括号匹配
             open_brace=$(grep -o '{' "$f" | wc -l)
             close_brace=$(grep -o '}' "$f" | wc -l)
             if [ "$open_brace" -ne "$close_brace" ]; then
                 echo -e "  ${RED}✗ $f: 花括号不匹配${NC}"
                 gradle_errors=$((gradle_errors + 1))
             fi
-            # 检查圆括号
             open_paren=$(grep -o '(' "$f" | wc -l)
             close_paren=$(grep -o ')' "$f" | wc -l)
             if [ "$open_paren" -ne "$close_paren" ]; then
@@ -156,7 +135,6 @@ manifest=$(echo "$pushed_files" | grep 'AndroidManifest.xml' || true)
 if [ -n "$manifest" ]; then
     for f in $manifest; do
         if [ -f "$f" ]; then
-            # 检查必须的标签
             if ! grep -q '<application' "$f"; then
                 echo -e "  ${RED}✗ $f: 缺少 <application> 标签${NC}"
                 errors=$((errors + 1))

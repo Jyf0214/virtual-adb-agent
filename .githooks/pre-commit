@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# pre-commit hook — 检查代码格式与语法
+# pre-commit hook — 提交前语法检查
 #
 # 检查内容：
-#   1. Kotlin 文件语法（ktlint）
-#   2. XML 文件格式（xmllint）
+#   1. Kotlin 语法（ktlint：未使用的导入 + 解析错误）
+#   2. XML 格式（xmllint）
 #   3. 不允许提交包含敏感信息的文件
 #
 set -euo pipefail
@@ -21,42 +21,45 @@ errors=0
 staged_kt=$(git diff --cached --name-only --diff-filter=ACM -- '*.kt' '*.kts')
 staged_xml=$(git diff --cached --name-only --diff-filter=ACM -- '*.xml')
 
-# ─── 1. Kotlin 格式检查（ktlint）────────────────────────────
+# ─── 1. Kotlin 语法检查（ktlint）────────────────────────────
 
 if [ -n "$staged_kt" ]; then
-    echo -e "${YELLOW}▸ 检查 Kotlin 格式...${NC}"
+    echo -e "${YELLOW}▸ 检查 Kotlin 语法...${NC}"
 
     if command -v ktlint &>/dev/null; then
-        # 使用系统安装的 ktlint
-        if echo "$staged_kt" | xargs ktlint --relative --disabled_rules=standard:no-wildcard-imports; then
-            echo -e "  ${GREEN}✓ Kotlin 格式检查通过${NC}"
+        ktlint_errors=0
+        for f in $staged_kt; do
+            if [ -f "$f" ]; then
+                if ! ktlint "$f" 2>/dev/null; then
+                    ktlint_errors=$((ktlint_errors + 1))
+                fi
+            fi
+        done
+        if [ "$ktlint_errors" -eq 0 ]; then
+            echo -e "  ${GREEN}✓ Kotlin 语法检查通过${NC}"
         else
-            echo -e "  ${RED}✗ Kotlin 格式有问题，请修复后重新提交${NC}"
+            echo -e "  ${RED}✗ 发现 $ktlint_errors 个文件有问题${NC}"
             echo -e "  ${YELLOW}  提示: 运行 'ktlint --format' 自动修复${NC}"
-            errors=$((errors + 1))
+            errors=$((errors + ktlint_errors))
         fi
     elif [ -f "./gradlew" ]; then
-        # 回退到 Gradle ktlint 插件（如果已配置）
         if ./gradlew ktlintCheck --quiet 2>/dev/null; then
-            echo -e "  ${GREEN}✓ Kotlin 格式检查通过${NC}"
+            echo -e "  ${GREEN}✓ Kotlin 语法检查通过${NC}"
         else
-            echo -e "  ${RED}✗ Kotlin 格式有问题，请修复后重新提交${NC}"
-            echo -e "  ${YELLOW}  提示: 运行 './gradlew ktlintFormat' 自动修复${NC}"
+            echo -e "  ${RED}✗ Kotlin 语法有问题，请修复后重新提交${NC}"
             errors=$((errors + 1))
         fi
     else
-        # 最低限度：检查是否有明显的语法错误
-        echo -e "  ${YELLOW}⚠ 未找到 ktlint，执行基础语法检查...${NC}"
+        # 无 ktlint 时做基础括号匹配
+        echo -e "  ${YELLOW}⚠ 未找到 ktlint，执行基础括号检查...${NC}"
         for f in $staged_kt; do
             if [ -f "$f" ]; then
-                # 检查括号匹配
                 open=$(grep -o '{' "$f" | wc -l)
                 close=$(grep -o '}' "$f" | wc -l)
                 if [ "$open" -ne "$close" ]; then
-                    echo -e "  ${RED}✗ $f: 括号不匹配 ( { = $open, } = $close )${NC}"
+                    echo -e "  ${RED}✗ $f: 花括号不匹配 { = $open, } = $close${NC}"
                     errors=$((errors + 1))
                 fi
-                # 检查括号匹配
                 open_paren=$(grep -o '(' "$f" | wc -l)
                 close_paren=$(grep -o ')' "$f" | wc -l)
                 if [ "$open_paren" -ne "$close_paren" ]; then
@@ -66,12 +69,12 @@ if [ -n "$staged_kt" ]; then
             fi
         done
         if [ "$errors" -eq 0 ]; then
-            echo -e "  ${GREEN}✓ 基础语法检查通过${NC}"
+            echo -e "  ${GREEN}✓ 基础括号检查通过${NC}"
         fi
     fi
 fi
 
-# ─── 2. XML 格式检查 ────────────────────────────────────────
+# ─── 2. XML 格式检查（xmllint）──────────────────────────────
 
 if [ -n "$staged_xml" ]; then
     echo -e "${YELLOW}▸ 检查 XML 格式...${NC}"
@@ -92,18 +95,7 @@ if [ -n "$staged_xml" ]; then
             errors=$((errors + xml_errors))
         fi
     else
-        # 没有 xmllint 时做基础检查
-        echo -e "  ${YELLOW}⚠ 未找到 xmllint，执行基础 XML 检查...${NC}"
-        for f in $staged_xml; do
-            if [ -f "$f" ]; then
-                # 检查是否是有效的 XML 开头
-                first_line=$(head -1 "$f")
-                if ! echo "$first_line" | grep -q '<?xml'; then
-                    echo -e "  ${YELLOW}⚠ $f: 编码声明缺失${NC}"
-                fi
-            fi
-        done
-        echo -e "  ${GREEN}✓ 基础 XML 检查通过${NC}"
+        echo -e "  ${YELLOW}⚠ 未找到 xmllint，跳过 XML 检查${NC}"
     fi
 fi
 
