@@ -30,24 +30,24 @@ if [ -n "$kt_files" ]; then
     for f in $kt_files; do
         if [ -f "$f" ]; then
             # 括号匹配
-            open_brace=$(grep -o '{' "$f" | wc -l)
-            close_brace=$(grep -o '}' "$f" | wc -l)
+            open_brace=$(grep -o '{' "$f" | wc -l || true)
+            close_brace=$(grep -o '}' "$f" | wc -l || true)
             if [ "$open_brace" -ne "$close_brace" ]; then
                 echo -e "  ${RED}✗ $f: 花括号不匹配 { = $open_brace, } = $close_brace${NC}"
                 errors=$((errors + 1))
             fi
 
             # 圆括号匹配
-            open_paren=$(grep -o '(' "$f" | wc -l)
-            close_paren=$(grep -o ')' "$f" | wc -l)
+            open_paren=$(grep -o '(' "$f" | wc -l || true)
+            close_paren=$(grep -o ')' "$f" | wc -l || true)
             if [ "$open_paren" -ne "$close_paren" ]; then
                 echo -e "  ${RED}✗ $f: 圆括号不匹配 ( = $open_paren, ) = $close_paren${NC}"
                 errors=$((errors + 1))
             fi
 
             # 方括号匹配
-            open_bracket=$(grep -o '\[' "$f" | wc -l)
-            close_bracket=$(grep -o '\]' "$f" | wc -l)
+            open_bracket=$(grep -o '\[' "$f" | wc -l || true)
+            close_bracket=$(grep -o '\]' "$f" | wc -l || true)
             if [ "$open_bracket" -ne "$close_bracket" ]; then
                 echo -e "  ${RED}✗ $f: 方括号不匹配 [ = $open_bracket, ] = $close_bracket${NC}"
                 errors=$((errors + 1))
