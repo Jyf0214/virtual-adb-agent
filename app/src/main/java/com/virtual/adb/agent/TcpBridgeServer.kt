@@ -38,7 +38,7 @@ class TcpBridgeServer(
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_LOG_ENTRIES = 100
 
-        // ADB 协议命令（大端序整数常量）
+        // ADB 协议命令（小端序整数常量）
         private const val CMD_CNXN = 0x434e584e // "CNXN"
         private const val CMD_OPEN = 0x4f50454e // "OPEN"
         private const val CMD_OKAY = 0x4f4b4159 // "OKAY"
@@ -246,11 +246,11 @@ class TcpBridgeServer(
             Log.i(TAG, "CNXN: version=$version, maxPayload=$maxPayload, system=$systemString")
             appendLog("→", clientAddr, "CNXN v=$version payload=$maxPayload")
 
-            // TCP 连接无需认证，直接用 OKAY + 设备身份回复
-            // arg0 = 服务端 max payload，arg1 = 客户端 max payload
+            // TCP 连接无需认证，回复 CNXN + 设备身份完成握手
+            // arg0 = 服务端版本，arg1 = 服务端 max payload
             val identity = buildDeviceIdentity()
-            writeMessage(output, CMD_OKAY, ADB_MAX_PAYLOAD, maxPayload, identity.toByteArray(Charsets.UTF_8))
-            appendLog("←", clientAddr, "OKAY payload=$ADB_MAX_PAYLOAD/$maxPayload")
+            writeMessage(output, CMD_CNXN, ADB_VERSION, ADB_MAX_PAYLOAD, identity.toByteArray(Charsets.UTF_8))
+            appendLog("←", clientAddr, "CNXN v=$ADB_VERSION payload=$ADB_MAX_PAYLOAD")
             Log.i(TAG, "ADB 握手完成: $clientAddr, 设备身份: $identity")
 
             // 处理命令流
@@ -647,16 +647,16 @@ class TcpBridgeServer(
 
     private fun readMessage(input: DataInputStream): AdbMessage? {
         return try {
-            // 读取 24 字节头，以大端序解析各字段
+            // 读取 24 字节头，以小端序解析各字段
             val headerBytes = ByteArray(24)
             input.readFully(headerBytes)
 
-            val command = bytesToBeInt(headerBytes, 0)
-            val arg0 = bytesToBeInt(headerBytes, 4)
-            val arg1 = bytesToBeInt(headerBytes, 8)
-            val dataLength = bytesToBeInt(headerBytes, 12)
-            val dataCrc32 = bytesToBeInt(headerBytes, 16)
-            val magic = bytesToBeInt(headerBytes, 20)
+            val command = bytesToLeInt(headerBytes, 0)
+            val arg0 = bytesToLeInt(headerBytes, 4)
+            val arg1 = bytesToLeInt(headerBytes, 8)
+            val dataLength = bytesToLeInt(headerBytes, 12)
+            val dataCrc32 = bytesToLeInt(headerBytes, 16)
+            val magic = bytesToLeInt(headerBytes, 20)
 
             lastRawHeader = headerBytes
             Log.d(TAG, "原始字节: ${headerBytes.joinToString(" ") {
@@ -713,13 +713,13 @@ class TcpBridgeServer(
             crc32.update(data)
         }
 
-        // ADB 协议使用大端序，DataOutputStream.writeInt() 正好是大端序
-        output.writeInt(command)
-        output.writeInt(arg0)
-        output.writeInt(arg1)
-        output.writeInt(dataLen)
-        output.writeInt(crc32.value.toInt())
-        output.writeInt(command xor -1) // magic = command XOR 0xFFFFFFFF
+        // ADB 协议使用小端序，手动按字节写入
+        writeLeInt(output, command)
+        writeLeInt(output, arg0)
+        writeLeInt(output, arg1)
+        writeLeInt(output, dataLen)
+        writeLeInt(output, crc32.value.toInt())
+        writeLeInt(output, command xor -1) // magic = command XOR 0xFFFFFFFF
 
         if (data != null) {
             output.write(data)
@@ -728,13 +728,23 @@ class TcpBridgeServer(
     }
 
     /**
-     * 以大端序从字节数组中解析 4 字节整数（ADB 协议使用大端序）
+     * 以小端序从字节数组中解析 4 字节整数（ADB 协议使用小端序）
      */
-    private fun bytesToBeInt(bytes: ByteArray, offset: Int): Int {
-        return ((bytes[offset].toInt() and 0xFF) shl 24) or
-            ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
-            ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
-            (bytes[offset + 3].toInt() and 0xFF)
+    private fun bytesToLeInt(bytes: ByteArray, offset: Int): Int {
+        return (bytes[offset].toInt() and 0xFF) or
+            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+    }
+
+    /**
+     * 以小端序写入 4 字节整数（ADB 协议使用小端序）
+     */
+    private fun writeLeInt(output: DataOutputStream, value: Int) {
+        output.write(value and 0xFF)
+        output.write((value shr 8) and 0xFF)
+        output.write((value shr 16) and 0xFF)
+        output.write((value shr 24) and 0xFF)
     }
 
     /**
