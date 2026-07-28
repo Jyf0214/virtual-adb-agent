@@ -91,17 +91,10 @@ jobs:
       - name: 构建 Debug APK
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: 压缩并上传 APK 到 Litterbox（1小时有效）
+      - name: 上传 Debug APK（保留 1 天）
+        uses: actions/upload-artifact@v4
         if: success()
-        run: |
-          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
-          ZIP="virtual-adb-agent-debug.zip"
-          echo "▸ 压缩 $APK → $ZIP"
-          zip -j "$ZIP" "$APK"
-          echo "▸ 上传到 Litterbox..."
-          URL=$(curl -s -F "reqtype=fileupload" -F "time=1h" -F "fileToUpload=@$ZIP" https://litterbox.catbox.moe/resources/internals/api.php)
-          echo ""
-          echo "════════════════════════════════════════"
-          echo "  下载链接（1小时有效）:"
-          echo "  $URL"
-          echo "════════════════════════════════════════"
+        with:
+          name: virtual-adb-agent-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 1
