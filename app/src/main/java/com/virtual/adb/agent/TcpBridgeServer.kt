@@ -119,7 +119,7 @@ class TcpBridgeServer(
 
     // ─── 服务器生命周期 ──────────────────────────────────────
 
-    fun start() {
+    fun start(host: String = "127.0.0.1") {
         val existing = serverSocket
         if (existing != null && existing.isBound && !existing.isClosed) {
             Log.w(TAG, "服务器已在运行中（端口 ${existing.localPort}），跳过重复启动")

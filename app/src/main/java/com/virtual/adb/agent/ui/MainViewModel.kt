@@ -4,12 +4,9 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
-import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.AndroidViewModel
 import com.virtual.adb.agent.ScreenCaptureService
 import com.virtual.adb.agent.TcpBridgeServer
@@ -43,6 +40,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** TCP 服务器是否正在运行 */
     private val _tcpRunning = MutableStateFlow(false)
     val tcpRunning: StateFlow<Boolean> = _tcpRunning.asStateFlow()
+
+    /** 局域网模式（绑定 0.0.0.0 允许外部设备接入） */
+    private val _lanMode = MutableStateFlow(false)
+    val lanMode: StateFlow<Boolean> = _lanMode.asStateFlow()
 
     /** TCP 服务器监听端口 */
     private val _tcpPort = MutableStateFlow(10000)
@@ -183,11 +184,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _tcpRunning.value = false
             _logMessage.value = "TCP 服务器已停止"
         } else {
-            tcpServer.start()
+            val host = if (_lanMode.value) "0.0.0.0" else "127.0.0.1"
+            tcpServer.start(host)
             _tcpRunning.value = true
             _tcpPort.value = tcpServer.boundPort.value
-            _logMessage.value = "TCP 服务器已启动，监听 127.0.0.1:${_tcpPort.value}"
+            _logMessage.value = "TCP 服务器已启动，监听 $host:${_tcpPort.value}"
         }
+    }
+
+    fun toggleLanMode() {
+        _lanMode.value = !_lanMode.value
     }
 
     /**

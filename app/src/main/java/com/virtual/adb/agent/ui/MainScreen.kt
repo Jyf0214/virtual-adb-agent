@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -26,8 +25,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
@@ -46,7 +43,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -78,6 +74,7 @@ fun MainScreen(
     val screenCaptureEnabled by viewModel.screenCaptureEnabled.collectAsState()
     val tcpRunning by viewModel.tcpRunning.collectAsState()
     val tcpPort by viewModel.tcpPort.collectAsState()
+    val lanMode by viewModel.lanMode.collectAsState()
     val captureRunning by viewModel.captureRunning.collectAsState()
     val logMessage by viewModel.logMessage.collectAsState()
     val tcpLogs by viewModel.tcpLogs.collectAsState()
@@ -167,10 +164,10 @@ fun MainScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = if (tcpRunning)
-                                    "监听 127.0.0.1:$tcpPort"
-                                else
-                                    "点击开关启动服务",
+                                text = if (tcpRunning) {
+                                    if (lanMode) "监听 0.0.0.0:$tcpPort（局域网）"
+                                    else "监听 127.0.0.1:$tcpPort"
+                                } else "点击开关启动服务",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = if (tcpRunning)
                                     MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
@@ -183,6 +180,22 @@ fun MainScreen(
                                     text = tcpStartError,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "局域网模式",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Switch(
+                                    checked = lanMode,
+                                    onCheckedChange = { viewModel.toggleLanMode() },
+                                    modifier = Modifier.height(24.dp)
                                 )
                             }
                         }
