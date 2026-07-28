@@ -395,6 +395,7 @@ class TcpBridgeServer(
                 // ── 未知命令 ──
                 else -> {
                     Log.w(TAG, "不支持的 ADB 命令: $command")
+                    appendLog("⚠", clientAddr, "未实现命令: $command")
                     "virtual-adb-agent: '$command' not implemented"
                 }
             }
@@ -410,6 +411,7 @@ class TcpBridgeServer(
      */
     private fun processCommandToBytes(command: String, clientAddr: String): ByteArray {
         Log.d(TAG, "执行命令(字节): $command")
+        appendLog("→", clientAddr, "执行命令: $command")
 
         return try {
             when {
