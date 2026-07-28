@@ -382,7 +382,7 @@ class TcpBridgeServer(
                 cmd.contains("android_id") || cmd.contains("serialno") || cmd.contains("boot_id") -> handleAndroidId()
 
                 // ── 3. 屏幕分辨率与参数 ──
-                cmd.contains("wm size") -> handleWmSize()
+                cmd.contains("wm size") -> handleWmSize(cmd)
                 cmd.contains("wm density") -> handleWmDensity()
                 cmd.contains("dumpsys window") -> handleDumpsysWindow()
 
@@ -458,9 +458,17 @@ class TcpBridgeServer(
         }
     }
 
-    private fun handleWmSize(): ByteArray {
+    private fun handleWmSize(cmd: String): ByteArray {
         val metrics = android.content.res.Resources.getSystem().displayMetrics
-        return "Physical size: ${metrics.widthPixels}x${metrics.heightPixels}\n".toByteArray(Charsets.UTF_8)
+        val width = metrics.widthPixels
+        val height = metrics.heightPixels
+
+        // 如果命令包含管道符或 grep，按行返回纯数字
+        return if (cmd.contains("grep") || cmd.contains("tail")) {
+            "$width\n$height\n".toByteArray(Charsets.UTF_8)
+        } else {
+            "Physical size: ${width}x${height}\n".toByteArray(Charsets.UTF_8)
+        }
     }
 
     private fun handleWmDensity(): ByteArray {
