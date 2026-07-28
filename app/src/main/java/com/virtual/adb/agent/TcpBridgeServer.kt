@@ -442,8 +442,16 @@ class TcpBridgeServer(
                 .trim()
 
             when {
-                // ── 1. 截图 ──
-                cmd.contains("screencap") -> handleScreencapPng()
+                //── 1. 截图 ──
+                cmd.contains("screencap") -> {
+                    // 区分不同截图命令，返回相应格式
+                    when {
+                        cmd.contains("screencap | nc") -> handleScreencapNc(cmd)
+                        cmd.contains("screencap | gzip") -> handleScreencapGzip()
+                        cmd.contains("screencap '-p'") || cmd.contains("screencap -p") -> handleScreencapPng()
+                        else -> handleScreencapPng() // 默认返回 PNG
+                    }
+                }
 
                 // ── 2. 设备 UUID / Android ID ──
                 cmd.contains("android_id") || cmd.contains("serialno") || cmd.contains("boot_id") -> handleAndroidId()
@@ -577,6 +585,99 @@ class TcpBridgeServer(
                 if (ServerConfig.enableVerboseLog.value) {
                     val elapsed = System.currentTimeMillis() - startTime
                     Log.i(TAG, "截图完成: ${result.size} bytes, 耗时 ${elapsed}ms")
+                }
+
+                result
+            } else {
+                "screencap: failed to capture frame\n".toByteArray(Charsets.UTF_8)
+            }
+        }
+    }
+
+    /**
+     * 处理 screencap | nc 命令
+     * 通过 nc 发送截图数据到指定地址
+     */
+    private fun handleScreencapNc(cmd: String): ByteArray {
+        val service = screenCaptureService
+            ?: return "screencap: screen capture service not running\n".toByteArray(Charsets.UTF_8)
+
+        if (!service.isActive.value) {
+            return "screencap: screen capture not active\n".toByteArray(Charsets.UTF_8)
+        }
+
+        return runBlocking {
+            val startTime = if (ServerConfig.enableVerboseLog.value) System.currentTimeMillis() else 0
+
+            val jpegData = service.getLatestFrameJpeg(ServerConfig.jpegQuality.value)
+            if (jpegData != null) {
+                var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
+                    ?: return@runBlocking jpegData
+
+                // 确保图片是横屏
+                if (bitmap.width < bitmap.height) {
+                    val matrix = android.graphics.Matrix()
+                    matrix.postRotate(270f)
+                    bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                }
+
+                val baos = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
+                val result = baos.toByteArray()
+
+                if (ServerConfig.enableVerboseLog.value) {
+                    val elapsed = System.currentTimeMillis() - startTime
+                    Log.i(TAG, "截图(nc): ${result.size} bytes, 耗时 ${elapsed}ms")
+                }
+
+                result
+            } else {
+                "screencap: failed to capture frame\n".toByteArray(Charsets.UTF_8)
+            }
+        }
+    }
+
+    /**
+     * 处理 screencap | gzip 命令
+     * 返回 gzip 压缩后的 PNG 截图
+     */
+    private fun handleScreencapGzip(): ByteArray {
+        val service = screenCaptureService
+            ?: return "screencap: screen capture service not running\n".toByteArray(Charsets.UTF_8)
+
+        if (!service.isActive.value) {
+            return "screencap: screen capture not active\n".toByteArray(Charsets.UTF_8)
+        }
+
+        return runBlocking {
+            val startTime = if (ServerConfig.enableVerboseLog.value) System.currentTimeMillis() else 0
+
+            val jpegData = service.getLatestFrameJpeg(ServerConfig.jpegQuality.value)
+            if (jpegData != null) {
+                var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
+                    ?: return@runBlocking jpegData
+
+                // 确保图片是横屏
+                if (bitmap.width < bitmap.height) {
+                    val matrix = android.graphics.Matrix()
+                    matrix.postRotate(270f)
+                    bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                }
+
+                val baos = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
+                val pngData = baos.toByteArray()
+
+                // gzip 压缩
+                val gzipBaos = ByteArrayOutputStream()
+                java.util.zip.GZIPOutputStream(gzipBaos).use { gzip ->
+                    gzip.write(pngData)
+                }
+                val result = gzipBaos.toByteArray()
+
+                if (ServerConfig.enableVerboseLog.value) {
+                    val elapsed = System.currentTimeMillis() - startTime
+                    Log.i(TAG, "截图(gzip): ${result.size} bytes, 原始 ${pngData.size} bytes, 耗时 ${elapsed}ms")
                 }
 
                 result
