@@ -18,7 +18,8 @@ object AppLogger {
     data class LogEntry(
         val level: String,
         val tag: String,
-        val message: String
+        val message: String,
+        val timestamp: Long = System.currentTimeMillis()
     )
 
     private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())

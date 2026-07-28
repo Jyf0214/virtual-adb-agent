@@ -22,9 +22,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
@@ -151,59 +153,72 @@ class ScreenCaptureService : Service() {
             return
         }
 
-        try {
-            val projectionManager =
-                getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjection = projectionManager.getMediaProjection(resultCode, resultData)
+        // 关键：在 Android 9+ 上，startForeground() 必须在 MediaProjection
+        // 操作前调用，否则系统认为服务未处于前台，直接强杀录屏通道。
+        startForeground(NOTIFICATION_ID, buildNotification())
+        AppLogger.i(TAG, "前台通知已挂载，等待系统确认前台状态...")
 
-            if (mediaProjection == null) {
-                AppLogger.e(TAG, "MediaProjection 创建失败")
-                return
-            }
+        // 将 MediaProjection/VirtualDisplay 初始化放到协程中延迟执行，
+        // 给 ColorOS/Android 9 足够时间将服务注册为前台，避免竞态条件。
+        serviceScope.launch {
+            delay(1000)
 
-            // 注册回调处理投影停止事件
-            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
-                override fun onStop() {
-                    AppLogger.i(TAG, "MediaProjection 被系统停止")
-                    stopCapture()
+            try {
+                val projectionManager =
+                    getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                mediaProjection = projectionManager.getMediaProjection(resultCode, resultData)
+
+                if (mediaProjection == null) {
+                    AppLogger.e(TAG, "MediaProjection 创建失败")
+                    return@launch
                 }
-            }, null)
 
-            // 始终使用物理屏幕真实宽高创建画布，避免 ColorOS 等系统
-            // 因 VirtualDisplay 方向与物理方向不一致而强杀 MediaProjection。
-            // 横屏转换由 TcpBridgeServer.handleScreencapPng 旋转逻辑完成。
-            val captureWidth = (screenWidth * CAPTURE_SCALE).toInt()
-            val captureHeight = (screenHeight * CAPTURE_SCALE).toInt()
-            val captureDensity = (screenDensity * CAPTURE_SCALE).toInt()
+                // 注册回调处理投影停止事件
+                mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                    override fun onStop() {
+                        AppLogger.i(TAG, "MediaProjection 被系统停止")
+                        stopCapture()
+                    }
+                }, null)
 
-            imageReader = ImageReader.newInstance(
-                captureWidth,
-                captureHeight,
-                PixelFormat.RGBA_8888,
-                2  // 最多缓存 2 帧
-            )
+                // 始终使用物理屏幕真实宽高创建画布
+                val captureWidth = (screenWidth * CAPTURE_SCALE).toInt()
+                val captureHeight = (screenHeight * CAPTURE_SCALE).toInt()
+                val captureDensity = (screenDensity * CAPTURE_SCALE).toInt()
 
-            virtualDisplay = mediaProjection?.createVirtualDisplay(
-                "VirtualAdbAgentCapture",
-                captureWidth,
-                captureHeight,
-                captureDensity,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader?.surface,
-                null,
-                null
-            )
+                imageReader = ImageReader.newInstance(
+                    captureWidth,
+                    captureHeight,
+                    PixelFormat.RGBA_8888,
+                    2  // 最多缓存 2 帧
+                )
+                AppLogger.i(TAG, "ImageReader 创建成功: ${captureWidth}x${captureHeight}")
 
-            _isActive.value = true
-            VirtualAdbApp.tcpServer.screenCaptureService = this@ScreenCaptureService
-            AppLogger.i(TAG, "屏幕捕捉已启动，横屏画布: ${captureWidth}x${captureHeight}")
+                virtualDisplay = mediaProjection?.createVirtualDisplay(
+                    "VirtualAdbAgentCapture",
+                    captureWidth,
+                    captureHeight,
+                    captureDensity,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    imageReader?.surface,
+                    null,
+                    null
+                )
 
-            // 启动前台服务通知
-            startForeground(NOTIFICATION_ID, buildNotification())
+                _isActive.value = true
+                VirtualAdbApp.tcpServer.screenCaptureService = this@ScreenCaptureService
+                AppLogger.i(TAG, "VirtualDisplay 创建成功，捕捉已启动")
 
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "启动屏幕捕捉失败", e)
-            stopCapture()
+            } catch (e: SecurityException) {
+                AppLogger.e(TAG, "权限被系统拒绝: ${e.message}")
+                stopCapture()
+            } catch (e: IllegalArgumentException) {
+                AppLogger.e(TAG, "ColorOS 拒绝此分辨率/Surface: ${e.message}")
+                stopCapture()
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "启动屏幕捕捉失败: ${e.message}", e)
+                stopCapture()
+            }
         }
     }
 

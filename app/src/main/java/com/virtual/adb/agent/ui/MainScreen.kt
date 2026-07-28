@@ -312,7 +312,10 @@ fun MainScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilledTonalButton(
                                     onClick = {
-                                        val text = systemLogs.joinToString("\n") { "[${it.level}/${it.tag}] ${it.message}" }
+                                        val text = systemLogs.joinToString("\n") { entry ->
+                                            val ts = formatTimestamp(entry.timestamp)
+                                            "[${ts}][${entry.level}/${entry.tag}] ${entry.message}"
+                                        }
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                         val clip = android.content.ClipData.newPlainText("system_logs", text)
                                         clipboard.setPrimaryClip(clip)
@@ -373,7 +376,7 @@ fun MainScreen(
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "${entry.tag}: ${entry.message}",
+                                            text = "${formatTimestamp(entry.timestamp)} ${entry.tag}: ${entry.message}",
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 fontFamily = FontFamily.Monospace
                                             ),
@@ -905,7 +908,7 @@ private fun LogEntryItem(entry: com.virtual.adb.agent.TcpBridgeServer.LogEntry) 
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = entry.client,
+                text = "${formatTimestamp(entry.timestamp)} ${entry.client}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
@@ -927,4 +930,9 @@ private fun formatFileSize(bytes: Long): String {
         bytes >= 1024 -> "%.1f KB".format(bytes.toDouble() / 1024)
         else -> "$bytes B"
     }
+}
+
+private fun formatTimestamp(ts: Long): String {
+    val sdf = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
+    return sdf.format(java.util.Date(ts))
 }
