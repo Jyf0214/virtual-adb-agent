@@ -38,6 +38,9 @@ class VirtualAdbApp : Application() {
         /** TCP 服务器单例 */
         val tcpServer = TcpBridgeServer()
 
+        /** Logcat 实时读取器 */
+        val logcatReader = LogcatReader()
+
         /** 崩溃信息 */
         @Volatile
         var lastCrashInfo: CrashInfo? = null

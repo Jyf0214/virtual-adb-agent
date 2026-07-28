@@ -282,6 +282,25 @@ class TcpBridgeServer(
                         streams[openLocalId] = StreamState(openLocalId, openRemoteId, service)
                         writeMessage(output, CMD_OKAY, openLocalId, openRemoteId, null)
                         appendLog("←", clientAddr, "OKAY stream=$openLocalId → $service")
+
+                        // shell:/exec: 命令在 OPEN 中直接携带，服务端处理后回复 WRTE + CLSE
+                        if (service.startsWith("shell:") || service.startsWith("exec:")) {
+                            val shellCmd = service.removePrefix("shell:").removePrefix("exec:")
+                            appendLog("→", clientAddr, "请求命令: $shellCmd")
+                            val responseData = processCommandToBytes(shellCmd, clientAddr)
+                            val respText = responseData.toString(Charsets.UTF_8).trimEnd('\u0000')
+                            val respPreview = if (respText.length > 200) respText.take(200) + "..." else respText
+                            appendLog("←", clientAddr, "返回结果: $respPreview")
+
+                            writeMessage(output, CMD_WRTE, openLocalId, openRemoteId, responseData)
+                            // 等待客户端 OKAY 确认
+                            val okayMsg = readMessage(input)
+                            if (okayMsg != null && okayMsg.command == CMD_OKAY) {
+                                appendLog("→", clientAddr, "OKAY (ack WRTE)")
+                            }
+                            writeMessage(output, CMD_CLSE, openLocalId, openRemoteId, null)
+                            streams.remove(openLocalId)
+                        }
                     }
 
                     CMD_WRTE -> {

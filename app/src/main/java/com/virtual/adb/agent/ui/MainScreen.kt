@@ -283,6 +283,9 @@ fun MainScreen(
                 }
             }
 
+            // ─── Logcat 控制台 ───
+            LogcatConsole(viewModel = viewModel)
+
             // ─── 状态日志 ───
             if (logMessage.isNotEmpty()) {
                 OutlinedCard(
@@ -414,6 +417,142 @@ private fun LogEntryItem(entry: com.virtual.adb.agent.TcpBridgeServer.LogEntry) 
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+/**
+ * Logcat 实时控制台
+ *
+ * 显示 Android 原生 logcat 日志，不做任何处理。
+ */
+@Composable
+private fun LogcatConsole(viewModel: MainViewModel) {
+    val context = LocalContext.current
+    val logcatRunning by viewModel.logcatRunning.collectAsState()
+    val logcatLogs by viewModel.logcatLogs.collectAsState()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (logcatRunning)
+                MaterialTheme.colorScheme.tertiaryContainer
+            else
+                MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Logcat 控制台",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = if (logcatRunning)
+                            MaterialTheme.colorScheme.onTertiaryContainer
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (logcatRunning) "实时监听中（${logcatLogs.size} 行）" else "点击开关启动",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (logcatRunning)
+                            MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+
+                Switch(
+                    checked = logcatRunning,
+                    onCheckedChange = { viewModel.toggleLogcat() },
+                    thumbContent = {
+                        Icon(
+                            imageVector = if (logcatRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(SwitchDefaults.IconSize)
+                        )
+                    }
+                )
+            }
+
+            // ─── Logcat 日志区域 ───
+            Spacer(modifier = Modifier.height(12.dp))
+            Divider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "日志 (${logcatLogs.size})",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                if (logcatLogs.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(
+                            onClick = {
+                                val text = logcatLogs.joinToString("\n")
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                val clip = android.content.ClipData.newPlainText("logcat_logs", text)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, "已复制 ${logcatLogs.size} 行日志", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "复制",
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("复制", style = MaterialTheme.typography.labelSmall)
+                        }
+                        FilledTonalButton(
+                            onClick = { viewModel.clearLogcatLogs() },
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text("清空", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (logcatLogs.isEmpty()) {
+                Text(
+                    text = if (logcatRunning) "等待日志..." else "未启动",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    logcatLogs.forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(vertical = 1.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
