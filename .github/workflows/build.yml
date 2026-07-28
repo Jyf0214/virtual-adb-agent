@@ -68,12 +68,7 @@ jobs:
           chmod +x gradlew
 
       - name: 构建 Debug APK
-        run: |
-          ./gradlew assembleDebug --no-daemon \
-            -Pandroid.injected.signing.store.file=$HOME/.android/debug.keystore \
-            -Pandroid.injected.signing.store.password=android \
-            -Pandroid.injected.signing.key.alias=androiddebugkey \
-            -Pandroid.injected.signing.key.password=android
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: 上传 Debug APK（保留 1 天）
         uses: actions/upload-artifact@v4
