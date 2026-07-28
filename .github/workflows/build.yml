@@ -13,59 +13,38 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 检查 Kotlin 语法
+      - name: 安装检查工具
         run: |
-          echo "▸ 检查 Kotlin 文件括号匹配..."
+          curl -sSLO https://github.com/pinterest/ktlint/releases/download/1.5.0/ktlint
+          chmod +x ktlint && sudo mv ktlint /usr/local/bin/
+          sudo apt-get update -qq && sudo apt-get install -y -qq libxml2-utils
+          echo "▸ ktlint $(ktlint --version), xmllint $(xmllint --version 2>&1 | head -1)"
+
+      - name: Kotlin 语法检查（ktlint）
+        run: ktlint --relative "**/*.kt" "**/*.kts"
+
+      - name: XML 格式检查（xmllint）
+        run: |
           errors=0
-          for f in $(find . -name "*.kt" -o -name "*.kts" | grep -v node_modules | grep -v build); do
-            open=$(grep -o '{' "$f" | wc -l)
-            close=$(grep -o '}' "$f" | wc -l)
-            if [ "$open" -ne "$close" ]; then
-              echo "  ✗ $f: 花括号不匹配 { = $open, } = $close"
-              errors=$((errors + 1))
-            fi
-            open_p=$(grep -o '(' "$f" | wc -l)
-            close_p=$(grep -o ')' "$f" | wc -l)
-            if [ "$open_p" -ne "$close_p" ]; then
-              echo "  ✗ $f: 圆括号不匹配 ( = $open_p, ) = $close_p"
+          for f in $(find . -name "*.xml" -not -path "*/build/*" -not -path "*/.git/*"); do
+            if ! xmllint --noout "$f" 2>/dev/null; then
+              echo "✗ $f"
               errors=$((errors + 1))
             fi
           done
-          if [ "$errors" -gt 0 ]; then
-            echo "═══ Kotlin 语法检查失败 ═══"
-            exit 1
-          fi
-          echo "  ✓ Kotlin 语法检查通过"
+          [ "$errors" -eq 0 ] || exit 1
 
-      - name: 检查 XML 格式
+      - name: 敏感信息检查
         run: |
-          echo "▸ 检查 XML 文件..."
-          for f in $(find . -name "*.xml" | grep -v node_modules | grep -v build); do
-            if command -v xmllint &>/dev/null; then
-              if ! xmllint --noout "$f" 2>/dev/null; then
-                echo "  ✗ $f: XML 格式错误"
-                exit 1
-              fi
-            fi
-          done
-          echo "  ✓ XML 格式检查通过"
-
-      - name: 检查敏感信息
-        run: |
-          echo "▸ 检查敏感信息..."
           patterns='password\s*=\s*"[^"]+"|api[_-]?key\s*=\s*"[^"]+"|secret\s*=\s*"[^"]+"|PRIVATE KEY'
           found=0
-          for f in $(find . -name "*.kt" -o -name "*.xml" -o -name "*.kts" | grep -v node_modules | grep -v build); do
+          for f in $(find . -name "*.kt" -o -name "*.xml" -o -name "*.kts" | grep -v build | grep -v .git); do
             if grep -qiE "$patterns" "$f" 2>/dev/null; then
-              echo "  ✗ $f: 疑似包含敏感信息"
+              echo "✗ $f: 疑似包含敏感信息"
               found=$((found + 1))
             fi
           done
-          if [ "$found" -gt 0 ]; then
-            echo "═══ 敏感信息检查失败 ═══"
-            exit 1
-          fi
-          echo "  ✓ 未发现敏感信息"
+          [ "$found" -eq 0 ] || exit 1
 
   build:
     needs: check
