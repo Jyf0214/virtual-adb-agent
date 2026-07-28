@@ -549,11 +549,13 @@ class TcpBridgeServer(
     }
 
     private fun handleWmSize(): String {
-        return "Physical size: 1080x2340"
+        val metrics = android.content.res.Resources.getSystem().displayMetrics
+        return "Physical size: ${metrics.widthPixels}x${metrics.heightPixels}"
     }
 
     private fun handleWmDensity(): String {
-        return "Physical density: 440"
+        val metrics = android.content.res.Resources.getSystem().displayMetrics
+        return "Physical density: ${metrics.densityDpi}"
     }
 
     private fun handleGetEvent(): String {
@@ -572,9 +574,13 @@ class TcpBridgeServer(
     }
 
     private fun handleSettings(command: String): String {
-        // settings get secure android_id → 返回伪造的 Android ID
+        // settings get secure android_id → 返回真实 Android ID
         if (command.contains("android_id")) {
-            return "a1b2c3d4e5f6a7b8"
+            val androidId = android.provider.Settings.Secure.getString(
+                android.content.res.Resources.getSystem().configuration.contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            ) ?: "a1b2c3d4e5f6a7b8"
+            return androidId
         }
         // 其他 settings 命令返回空
         return ""
@@ -610,6 +616,9 @@ class TcpBridgeServer(
                 appendLine("Buffers:        0 kB")
                 appendLine("Cached:         0 kB")
             }
+            path == "/proc/sys/kernel/random/boot_id" -> {
+                java.util.UUID.randomUUID().toString()
+            }
             path.startsWith("/sys/") -> "Permission denied"
             path.startsWith("/proc/") -> "Permission denied"
             path.startsWith("/sdcard/") || path.startsWith("/storage/") -> "Permission denied"
@@ -628,7 +637,10 @@ class TcpBridgeServer(
                 appendLine("  level: 100")
                 appendLine("  temperature: 250")
             }
-            service.startsWith("window") -> handleWmSize()
+            service.startsWith("window") -> {
+                val metrics = android.content.res.Resources.getSystem().displayMetrics
+                "  init=${metrics.widthPixels}x${metrics.heightPixels} ${metrics.densityDpi}dpi cur=${metrics.widthPixels}x${metrics.heightPixels}"
+            }
             service.startsWith("package") -> ""
             service.startsWith("activity") -> ""
             else -> ""
@@ -660,7 +672,8 @@ class TcpBridgeServer(
             "ro.timezone" to java.util.TimeZone.getDefault().id,
             "persist.sys.language" to java.util.Locale.getDefault().language,
             "persist.sys.country" to java.util.Locale.getDefault().country,
-            "ro.boot.serialno" to getDeviceSerial()
+            "ro.boot.serialno" to getDeviceSerial(),
+            "ro.sf.lcd_density" to "${android.content.res.Resources.getSystem().displayMetrics.densityDpi}"
         )
         return props.entries.joinToString("\n") { "[${it.key}]: [${it.value}]" }
     }
@@ -688,6 +701,7 @@ class TcpBridgeServer(
             "ro.board.platform" -> android.os.Build.BOARD
             "ro.boot.serialno" -> getDeviceSerial()
             "ro.serialno" -> getDeviceSerial()
+            "ro.sf.lcd_density" -> "${android.content.res.Resources.getSystem().displayMetrics.densityDpi}"
             "persist.sys.language" -> java.util.Locale.getDefault().language
             "persist.sys.country" -> java.util.Locale.getDefault().country
             "ro.timezone" -> java.util.TimeZone.getDefault().id
