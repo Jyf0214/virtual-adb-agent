@@ -187,6 +187,8 @@ class ScreenCaptureService : Service() {
                 }, null)
 
                 // 始终使用物理屏幕真实宽高创建画布
+                // 重新获取一次，避免服务启动后屏幕方向已改变
+                obtainScreenMetrics()
                 val captureWidth = (screenWidth * CAPTURE_SCALE).toInt()
                 val captureHeight = (screenHeight * CAPTURE_SCALE).toInt()
                 val captureDensity = (screenDensity * CAPTURE_SCALE).toInt()
