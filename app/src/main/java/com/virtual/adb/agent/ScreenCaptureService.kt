@@ -15,7 +15,9 @@ import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import kotlinx.coroutines.CoroutineScope
@@ -63,9 +65,10 @@ class ScreenCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
-    private var screenWidth = 0
-    private var screenHeight = 0
-    private var screenDensity = 0
+    @Volatile private var screenWidth = 0
+    @Volatile private var screenHeight = 0
+    @Volatile private var screenDensity = 0
+    private var displayListener: DisplayManager.DisplayListener? = null
 
     /** 本地 Binder，供 Activity 绑定获取服务实例 */
     inner class LocalBinder : android.os.Binder() {
@@ -214,6 +217,7 @@ class ScreenCaptureService : Service() {
 
                 _isActive.value = true
                 VirtualAdbApp.tcpServer.screenCaptureService = this@ScreenCaptureService
+                registerDisplayListener()
                 AppLogger.i(TAG, "VirtualDisplay 创建成功，捕捉已启动")
 
             } catch (e: SecurityException) {
@@ -236,6 +240,7 @@ class ScreenCaptureService : Service() {
      * 避免通知一闪消失。用户主动关闭时才调用 [shutdownService]。
      */
     fun stopCapture() {
+        unregisterDisplayListener()
         try {
             virtualDisplay?.release()
             virtualDisplay = null
@@ -264,6 +269,82 @@ class ScreenCaptureService : Service() {
             stopSelf()
         } catch (e: Exception) {
             AppLogger.e(TAG, "停止前台服务出错", e)
+        }
+    }
+
+    // ─── 屏幕旋转自适应 ────────────────────────────────────
+
+    /**
+     * 注册 DisplayListener 监听屏幕旋转，自动重建 VirtualDisplay。
+     */
+    private fun registerDisplayListener() {
+        if (displayListener != null) return
+        val dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        displayListener = object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) {}
+
+            override fun onDisplayRemoved(displayId: Int) {}
+
+            override fun onDisplayChanged(displayId: Int) {
+                recreateVirtualDisplayIfNeeded()
+            }
+        }
+        dm.registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
+        AppLogger.i(TAG, "DisplayListener 已注册")
+    }
+
+    private fun unregisterDisplayListener() {
+        displayListener?.let {
+            val dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+            dm.unregisterDisplayListener(it)
+            displayListener = null
+            AppLogger.i(TAG, "DisplayListener 已注销")
+        }
+    }
+
+    /**
+     * 检查屏幕尺寸是否变化，若是则重建 VirtualDisplay + ImageReader。
+     * VirtualDisplay 创建后不能换 Surface，只能 release 旧的重建新的。
+     */
+    @Synchronized
+    private fun recreateVirtualDisplayIfNeeded() {
+        val mp = mediaProjection ?: return
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getRealMetrics(metrics)
+
+        if (metrics.widthPixels == screenWidth && metrics.heightPixels == screenHeight) return
+
+        val oldW = screenWidth
+        val oldH = screenHeight
+        screenWidth = metrics.widthPixels
+        screenHeight = metrics.heightPixels
+        screenDensity = metrics.densityDpi
+        AppLogger.i(TAG, "屏幕旋转: ${oldW}x${oldH} → ${screenWidth}x${screenHeight}，重建 VirtualDisplay")
+
+        try {
+            // 1. 销毁旧的
+            virtualDisplay?.release()
+            virtualDisplay = null
+            imageReader?.close()
+            imageReader = null
+
+            // 2. 按新尺寸重建
+            val cw = (screenWidth * CAPTURE_SCALE).toInt()
+            val ch = (screenHeight * CAPTURE_SCALE).toInt()
+            val cd = (screenDensity * CAPTURE_SCALE).toInt()
+
+            imageReader = ImageReader.newInstance(cw, ch, PixelFormat.RGBA_8888, 2)
+            virtualDisplay = mp.createVirtualDisplay(
+                "VirtualAdbAgentCapture",
+                cw, ch, cd,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader?.surface, null, null
+            )
+            AppLogger.i(TAG, "VirtualDisplay 重建成功: ${cw}x${ch}")
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "重建 VirtualDisplay 失败", e)
         }
     }
 
