@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 调试截图保存在 getExternalFilesDir(null) 下 -->
+    <external-files-path name="debug_screenshots" path="." />
+    <!-- 也支持 filesDir 兜底路径 -->
+    <files-path name="debug_screenshots_fallback" path="." />
+</paths>

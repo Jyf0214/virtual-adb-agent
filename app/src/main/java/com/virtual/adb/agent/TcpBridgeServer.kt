@@ -538,25 +538,22 @@ class TcpBridgeServer(
                     appendLog("ℹ", clientAddr, "最终截图尺寸: ${bitmap.width} x ${bitmap.height}")
                 }
 
-                // 第三步：调试存图
-                if (ServerConfig.enableDebugSave.value) {
-                    try {
-                        val debugDir = service.getExternalFilesDir(null) ?: service.filesDir
-                        val debugFile = java.io.File(debugDir, "adb_screencap_debug.png")
-                        java.io.FileOutputStream(debugFile).use { out ->
-                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                        }
-                        if (ServerConfig.enableVerboseLog.value) {
-                            appendLog("ℹ", clientAddr, "调试截图已保存: ${debugFile.absolutePath}")
-                        }
-                    } catch (e: Exception) {
-                        appendLog("✗", clientAddr, "保存调试截图失败: ${e.message}")
-                    }
-                }
-
                 val baos = ByteArrayOutputStream()
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
                 val result = baos.toByteArray()
+
+                // 调试存图（保留 10 张，带时间戳命名）
+                if (ServerConfig.enableDebugSave.value) {
+                    val debugDir = service.getExternalFilesDir(null) ?: service.filesDir
+                    val savedPath = DebugScreenshotManager.saveScreenshot(debugDir, result)
+                    if (savedPath != null) {
+                        if (ServerConfig.enableVerboseLog.value) {
+                            appendLog("ℹ", clientAddr, "调试截图已保存: $savedPath")
+                        }
+                    } else {
+                        appendLog("✗", clientAddr, "保存调试截图失败")
+                    }
+                }
 
                 if (ServerConfig.enableVerboseLog.value) {
                     val elapsed = System.currentTimeMillis() - startTime

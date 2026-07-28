@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.virtual.adb.agent.AppLogger
+import com.virtual.adb.agent.DebugScreenshotManager
 import com.virtual.adb.agent.ResolutionMode
 import com.virtual.adb.agent.RotationMode
 
@@ -379,6 +380,111 @@ fun MainScreen(
                                             maxLines = 3,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ─── 调试截图列表 ───
+            val screenshots by DebugScreenshotManager.screenshots.collectAsState()
+            OutlinedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "调试截图 (${screenshots.size}/10)",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        if (screenshots.isNotEmpty()) {
+                            FilledTonalButton(
+                                onClick = { DebugScreenshotManager.clearAll() },
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text("清空全部", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (screenshots.isEmpty()) {
+                        Text(
+                            text = "无调试截图（需开启「调试存图」开关）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            screenshots.reversed().forEach { info ->
+                                val uri = androidx.core.content.FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    java.io.File(info.filePath)
+                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = info.fileName,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontFamily = FontFamily.Monospace
+                                            ),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = formatFileSize(info.sizeBytes),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    FilledTonalButton(
+                                        onClick = {
+                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                                setDataAndType(uri, "image/png")
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            try {
+                                                context.startActivity(intent)
+                                            } catch (e: Exception) {
+                                                android.widget.Toast.makeText(context, "打开图片失败", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text("查看", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    FilledTonalButton(
+                                        onClick = {
+                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                type = "image/png"
+                                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(android.content.Intent.createChooser(shareIntent, "分享截图"))
+                                        },
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text("分享", style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                             }
@@ -836,5 +942,13 @@ private fun LogEntryItem(entry: com.virtual.adb.agent.TcpBridgeServer.LogEntry) 
                 overflow = TextOverflow.Ellipsis
             )
         }
+    }
+}
+
+private fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes >= 1024 * 1024 -> "%.1f MB".format(bytes.toDouble() / (1024 * 1024))
+        bytes >= 1024 -> "%.1f KB".format(bytes.toDouble() / 1024)
+        else -> "$bytes B"
     }
 }
