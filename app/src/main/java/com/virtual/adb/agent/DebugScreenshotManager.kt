@@ -1,8 +1,11 @@
 package com.virtual.adb.agent
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -76,7 +79,7 @@ object DebugScreenshotManager {
         val files = _screenshots.value.toList()
         _screenshots.value = emptyList()
         // 后台删除文件
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        CoroutineScope(Dispatchers.IO).launch {
             files.forEach { info ->
                 try {
                     File(info.filePath).delete()
