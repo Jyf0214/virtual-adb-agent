@@ -59,7 +59,7 @@ class ScreenCaptureService : Service() {
     private val _isActive = MutableStateFlow(false)
     val isActive: StateFlow<Boolean> = _isActive.asStateFlow()
 
-    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
@@ -96,8 +96,7 @@ class ScreenCaptureService : Service() {
                 }
             }
             ACTION_STOP -> {
-                stopCapture()
-                stopSelf()
+                shutdownService()
             }
             else -> {
                 AppLogger.d(TAG, "收到未知 action: ${intent?.action}")
@@ -223,7 +222,10 @@ class ScreenCaptureService : Service() {
     }
 
     /**
-     * 停止捕捉
+     * 停止捕捉（仅清理资源，保留前台服务/通知）
+     *
+     * MediaProjection 被系统强杀（onStop）时只清资源不删通知，
+     * 避免通知一闪消失。用户主动关闭时才调用 [shutdownService]。
      */
     fun stopCapture() {
         try {
@@ -238,11 +240,17 @@ class ScreenCaptureService : Service() {
 
             _isActive.value = false
             VirtualAdbApp.tcpServer.screenCaptureService = null
-            AppLogger.i(TAG, "屏幕捕捉已停止")
+            AppLogger.i(TAG, "屏幕捕捉已停止（服务/通知仍存活）")
         } catch (e: Exception) {
             AppLogger.e(TAG, "停止捕捉时出错", e)
         }
+    }
 
+    /**
+     * 完全关闭服务（清理资源 + 移除前台通知 + 自杀）
+     */
+    fun shutdownService() {
+        stopCapture()
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
