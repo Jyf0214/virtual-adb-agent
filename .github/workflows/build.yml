@@ -71,6 +71,59 @@ jobs:
       - name: 构建 Debug APK
         run: ./gradlew assembleDebug --no-daemon
 
+      # 统一调试签名密钥，独立缓存管理
+      - name: 缓存调试签名密钥
+        id: cache-signing-key
+        uses: actions/cache@v4
+        with:
+          path: ~/debug_signing_key.keystore
+          key: debug-signing-key-v1
+
+      - name: 注入调试签名
+        shell: bash
+        run: |
+          KS_PATH=~/debug_signing_key.keystore
+          KSPASS=androiddebug
+          KSALIAS=debug
+
+          if [ -f "$KS_PATH" ]; then
+            echo "✓ 复用缓存签名密钥"
+          else
+            echo "○ 生成新签名密钥..."
+            keytool -genkeypair -v \
+              -keystore "$KS_PATH" \
+              -alias "$KSALIAS" \
+              -keyalg RSA -keysize 2048 -validity 36500 \
+              -storepass "$KSPASS" -keypass "$KSPASS" \
+              -dname "CN=debug,O=debug,C=XX" -noprompt
+            echo "✓ 新密钥已生成"
+          fi
+
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          [ -z "$APK" ] && { echo "⚠ 未找到 APK"; exit 1; }
+
+          zip -q -d "$APK" "META-INF/*" || :
+
+          unset APKSIGNER
+          for dir in "$ANDROID_HOME/build-tools" /usr/local/lib/android/sdk/build-tools /opt/android/sdk/build-tools; do
+            [ -d "$dir" ] || continue
+            found=$(find "$dir" -name apksigner -type f 2>/dev/null | sort -V | tail -1)
+            [ -n "$found" ] && { APKSIGNER=$found; break; }
+          done
+
+          if [ -z "${APKSIGNER:-}" ]; then
+            echo "⚠ 未找到 apksigner，跳过签名"
+            exit 0
+          fi
+
+          "$APKSIGNER" sign \
+            --ks "$KS_PATH" \
+            --ks-pass "pass:$KSPASS" \
+            --ks-key-alias "$KSALIAS" \
+            --key-pass "pass:$KSPASS" \
+            "$APK"
+          echo "✓ 签名完成"
+
       - name: 上传 Debug APK（保留 1 天）
         uses: actions/upload-artifact@v4
         if: success()
