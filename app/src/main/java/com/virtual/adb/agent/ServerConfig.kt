@@ -44,6 +44,9 @@ object ServerConfig {
 
     // ─── 截图性能配置 ───────────────────────────────────────
 
+    /** 强制横屏画布（创建 VirtualDisplay 时宽 > 高，避免竖屏黑边） */
+    val forceLandscapeCanvas = MutableStateFlow(true)
+
     /** 启用智能缩放（宽度超过目标值时等比缩放） */
     val enableSmartScale = MutableStateFlow(true)
 

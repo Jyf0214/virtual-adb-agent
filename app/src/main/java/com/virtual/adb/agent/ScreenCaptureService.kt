@@ -170,8 +170,16 @@ class ScreenCaptureService : Service() {
                 }
             }, null)
 
-            val captureWidth = (screenWidth * CAPTURE_SCALE).toInt()
-            val captureHeight = (screenHeight * CAPTURE_SCALE).toInt()
+            // 根据配置决定画布方向
+            val (baseWidth, baseHeight) = if (ServerConfig.forceLandscapeCanvas.value) {
+                // 强制横屏画布：宽 > 高，避免 OPPO 等设备创建竖屏画布导致黑边
+                Pair(maxOf(screenWidth, screenHeight), minOf(screenWidth, screenHeight))
+            } else {
+                // 跟随系统真实方向
+                Pair(screenWidth, screenHeight)
+            }
+            val captureWidth = (baseWidth * CAPTURE_SCALE).toInt()
+            val captureHeight = (baseHeight * CAPTURE_SCALE).toInt()
             val captureDensity = (screenDensity * CAPTURE_SCALE).toInt()
 
             imageReader = ImageReader.newInstance(
@@ -194,7 +202,7 @@ class ScreenCaptureService : Service() {
 
             _isActive.value = true
             VirtualAdbApp.tcpServer.screenCaptureService = this@ScreenCaptureService
-            Log.i(TAG, "屏幕捕捉已启动，采集分辨率: ${captureWidth}x${captureHeight}")
+            Log.i(TAG, "屏幕捕捉已启动，横屏画布: ${captureWidth}x${captureHeight}")
 
             // 启动前台服务通知
             startForeground(NOTIFICATION_ID, buildNotification())

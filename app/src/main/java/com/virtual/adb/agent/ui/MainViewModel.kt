@@ -74,6 +74,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val customHeight: StateFlow<Int> = ServerConfig.customHeight
 
     // 截图性能配置
+    val forceLandscapeCanvas: StateFlow<Boolean> = ServerConfig.forceLandscapeCanvas
     val enableSmartScale: StateFlow<Boolean> = ServerConfig.enableSmartScale
     val smartScaleTargetWidth: StateFlow<Int> = ServerConfig.smartScaleTargetWidth
     val jpegQuality: StateFlow<Int> = ServerConfig.jpegQuality
@@ -275,6 +276,11 @@ s.close()
     }
 
     // ─── 截图性能配置修改 ──────────────────────────────────
+
+    /** 切换强制横屏画布 */
+    fun toggleForceLandscapeCanvas() {
+        ServerConfig.forceLandscapeCanvas.value = !ServerConfig.forceLandscapeCanvas.value
+    }
 
     /** 切换智能缩放 */
     fun toggleSmartScale() {
