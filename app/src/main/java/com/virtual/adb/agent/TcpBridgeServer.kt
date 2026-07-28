@@ -4,7 +4,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.provider.Settings
-import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -128,7 +127,7 @@ class TcpBridgeServer(
     fun start(host: String = "127.0.0.1") {
         val existing = serverSocket
         if (existing != null && existing.isBound && !existing.isClosed) {
-            Log.w(TAG, "服务器已在运行中（端口 ${existing.localPort}），跳过重复启动")
+            AppLogger.w(TAG, "服务器已在运行中（端口 ${existing.localPort}），跳过重复启动")
             _isRunning.value = true
             return
         }
@@ -136,7 +135,7 @@ class TcpBridgeServer(
         stopInternal()
 
         _startError.value = "正在启动..."
-        Log.i(TAG, "尝试启动 ADB TCP 服务器，端口: $port")
+        AppLogger.i(TAG, "尝试启动 ADB TCP 服务器，端口: $port")
 
         serverJob = serverScope.launch {
             try {
@@ -146,7 +145,7 @@ class TcpBridgeServer(
                     socket.reuseAddress = true
                     socket.bind(java.net.InetSocketAddress(inetAddress, port))
                     serverSocket = socket
-                    Log.i(TAG, "已绑定 $host:$port，reuseAddress=true")
+                    AppLogger.i(TAG, "已绑定 $host:$port，reuseAddress=true")
                 }
 
                 val boundAddr = serverSocket!!.inetAddress?.hostAddress ?: "unknown"
@@ -154,13 +153,13 @@ class TcpBridgeServer(
                 _boundPort.value = boundPort
                 _isRunning.value = true
                 _startError.value = ""
-                Log.i(TAG, "ADB TCP 服务器启动成功，监听 $boundAddr:$boundPort")
+                AppLogger.i(TAG, "ADB TCP 服务器启动成功，监听 $boundAddr:$boundPort")
 
                 while (isActive) {
                     try {
                         val clientSocket = serverSocket?.accept() ?: break
                         val clientAddr = "${clientSocket.inetAddress.hostAddress}:${clientSocket.port}"
-                        Log.i(TAG, "新 ADB 客户端连接: $clientAddr")
+                        AppLogger.i(TAG, "新 ADB 客户端连接: $clientAddr")
                         appendLog("→", clientAddr, "ADB 客户端已连接")
 
                         launch {
@@ -168,13 +167,13 @@ class TcpBridgeServer(
                         }
                     } catch (e: SocketException) {
                         if (isActive) {
-                            Log.e(TAG, "Accept 异常", e)
+                            AppLogger.e(TAG, "Accept 异常", e)
                         }
                     }
                 }
             } catch (e: Exception) {
                 val msg = "启动失败: ${e.javaClass.simpleName} - ${e.message}"
-                Log.e(TAG, "服务器启动失败", e)
+                AppLogger.e(TAG, "服务器启动失败", e)
                 _isRunning.value = false
                 _startError.value = msg
             }
@@ -184,7 +183,7 @@ class TcpBridgeServer(
     fun stop() {
         stopInternal()
         _startError.value = ""
-        Log.i(TAG, "ADB TCP 服务器已停止")
+        AppLogger.i(TAG, "ADB TCP 服务器已停止")
     }
 
     private fun stopInternal() {
@@ -194,7 +193,7 @@ class TcpBridgeServer(
         try {
             serverSocket?.close()
         } catch (e: Exception) {
-            Log.e(TAG, "关闭 ServerSocket 异常", e)
+            AppLogger.e(TAG, "关闭 ServerSocket 异常", e)
         }
         serverSocket = null
         _clientCount.value = 0
@@ -229,7 +228,7 @@ class TcpBridgeServer(
             val version = cnxn.arg0
             val maxPayload = cnxn.arg1
             val systemString = cnxn.data?.toString(Charsets.UTF_8)?.trimEnd('\u0000') ?: ""
-            Log.i(TAG, "CNXN: version=$version, maxPayload=$maxPayload, system=$systemString")
+            AppLogger.i(TAG, "CNXN: version=$version, maxPayload=$maxPayload, system=$systemString")
             appendLog("→", clientAddr, "CNXN v=$version payload=$maxPayload")
 
             negotiatedVersion = version
@@ -238,7 +237,7 @@ class TcpBridgeServer(
             val identity = buildDeviceIdentity()
             writeMessage(output, CMD_CNXN, ADB_VERSION, ADB_MAX_PAYLOAD, identity.toByteArray(Charsets.UTF_8))
             appendLog("←", clientAddr, "CNXN v=$ADB_VERSION payload=$ADB_MAX_PAYLOAD")
-            Log.i(TAG, "ADB 握手完成: $clientAddr")
+            AppLogger.i(TAG, "ADB 握手完成: $clientAddr")
 
             // 处理命令流
             while (socket.isConnected && !socket.isClosed) {
@@ -411,7 +410,7 @@ class TcpBridgeServer(
             appendLog("✗", clientAddr, "连接断开: ${e.message}")
         } catch (e: Exception) {
             appendLog("✗", clientAddr, "异常: ${e.message}")
-            Log.e(TAG, "处理 ADB 客户端异常", e)
+            AppLogger.e(TAG, "处理 ADB 客户端异常", e)
         } finally {
             try {
                 socket.close()
@@ -423,7 +422,7 @@ class TcpBridgeServer(
     // ─── ADB 命令全量路由处理 ──────────────────────────────────────
 
     private fun processCommandToBytes(command: String, clientAddr: String): ByteArray {
-        Log.d(TAG, "执行命令: $command")
+        AppLogger.d(TAG, "执行命令: $command")
 
         return try {
             val cmd = command
@@ -433,6 +432,12 @@ class TcpBridgeServer(
                 .trim()
 
             when {
+                // 检测 screencap + 管道，强制降级为普通 screencap -p
+                cmd.contains("screencap") && (cmd.contains("nc ") || cmd.contains("gzip")) -> {
+                    appendLog("→", clientAddr, "管道探测已拦截，强制降级")
+                    "\n".toByteArray(Charsets.UTF_8)
+                }
+
                 // 统一全量包含 screencap 的指令返回 PNG
                 cmd.contains("screencap") -> handleScreencapPng(clientAddr)
 
@@ -472,7 +477,7 @@ class TcpBridgeServer(
                 else -> "\n".toByteArray(Charsets.UTF_8)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "处理命令异常: $command", e)
+            AppLogger.e(TAG, "处理命令异常: $command", e)
             "\n".toByteArray(Charsets.UTF_8)
         }
     }
@@ -504,7 +509,10 @@ class TcpBridgeServer(
             val jpegData = service.getLatestFrameJpeg(ServerConfig.jpegQuality.value)
             if (jpegData != null) {
                 var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
-                    ?: return@runBlocking jpegData
+                if (bitmap == null) {
+                    appendLog("✗", clientAddr, "解码失败: JPEG 数据损坏无法解析 (${jpegData.size} bytes)")
+                    return@runBlocking "screencap: failed to decode internal image buffer\n".toByteArray(Charsets.UTF_8)
+                }
 
                 // 第一步：针对竖向 Buffer (如 1080x1920) 转换为标准横屏 (1920x1080)
                 if (bitmap.width < bitmap.height) {
@@ -649,7 +657,7 @@ class TcpBridgeServer(
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "启动应用失败: $command", e)
+            AppLogger.e(TAG, "启动应用失败: $command", e)
         }
         return "Starting: Intent { ... }\n".toByteArray(Charsets.UTF_8)
     }
@@ -732,7 +740,7 @@ class TcpBridgeServer(
 
             // 校验 magic
             if ((command xor magic) != -1) {
-                Log.w(TAG, "无效 magic")
+                AppLogger.w(TAG, "无效 magic")
                 return null
             }
 
@@ -749,7 +757,7 @@ class TcpBridgeServer(
                     calcSum += (b.toInt() and 0xFF)
                 }
                 if (calcSum != dataCrc32) {
-                    Log.w(TAG, "校验和失败: expected=$dataCrc32 actual=$calcSum")
+                    AppLogger.w(TAG, "校验和失败: expected=$dataCrc32 actual=$calcSum")
                     return null
                 }
             }
