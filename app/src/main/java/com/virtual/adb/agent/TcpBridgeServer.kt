@@ -265,58 +265,19 @@ class TcpBridgeServer(
                         writeMessage(output, CMD_OKAY, serverStreamId, clientStreamId, null)
                         appendLog("←", clientAddr, "OKAY stream=$clientStreamId (server=$serverStreamId) → $service")
 
-                        // 2. 提取 Shell 命令并执行
-                        val cleanCmd = service
-                            .removePrefix("shell:")
-                            .removePrefix("exec:")
-                            .removePrefix("exec-out:")
-                            .trim()
+                        // sync: 是持久二进制通道，保持流开启，等待后续 WRTE 指令
+                        if (service == "sync:") {
+                            appendLog("→", clientAddr, "开启 Sync 持久流通道")
+                        } else {
+                            // 普通 Shell / Exec 命令处理
+                            val cleanCmd = service
+                                .removePrefix("shell:")
+                                .removePrefix("exec:")
+                                .removePrefix("exec-out:")
+                                .trim()
 
-                        appendLog("→", clientAddr, "请求命令: $cleanCmd")
-                        val responseData = processCommandToBytes(cleanCmd, clientAddr)
-
-                        val respText = if (responseData.isNotEmpty()) String(responseData, Charsets.UTF_8) else ""
-                        val respPreview = if (respText.length > 200) respText.take(200) + "..." else respText
-                        appendLog("←", clientAddr, "返回结果: $respPreview")
-
-                        // 3. 发送 WRTE (如有数据)
-                        if (responseData.isNotEmpty()) {
-                            writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, responseData)
-                            // 尝试读取客户端对 WRTE 的 OKAY 确认 (非阻塞吞掉)
-                            try {
-                                socket.soTimeout = 1000
-                                val ack = readMessage(input)
-                                if (ack != null && ack.command == CMD_OKAY) {
-                                    appendLog("→", clientAddr, "OKAY (ack WRTE)")
-                                }
-                            } catch (_: Exception) {
-                            } finally {
-                                socket.soTimeout = READ_TIMEOUT_MS
-                            }
-                        }
-
-                        // 4. 【核心修复】：发送 CLSE 告知客户端 EOF (数据结束)
-                        writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
-                        appendLog("←", clientAddr, "CLSE stream=$clientStreamId")
-                        streams.remove(serverStreamId)
-                    }
-
-                    CMD_WRTE -> {
-                        val clientStreamId = msg.arg0
-                        val serverStreamId = msg.arg1
-
-                        // 回复 OKAY 确认收到 WRTE
-                        writeMessage(output, CMD_OKAY, serverStreamId, clientStreamId, null)
-
-                        val command = msg.data?.let { raw ->
-                            val end = raw.indexOf(0)
-                            if (end >= 0) String(raw, 0, end, Charsets.UTF_8)
-                            else String(raw, Charsets.UTF_8)
-                        }?.trim() ?: ""
-
-                        if (command.isNotEmpty()) {
-                            appendLog("→", clientAddr, "请求命令: $command")
-                            val responseData = processCommandToBytes(command, clientAddr)
+                            appendLog("→", clientAddr, "请求命令: $cleanCmd")
+                            val responseData = processCommandToBytes(cleanCmd, clientAddr)
 
                             if (responseData.isNotEmpty()) {
                                 writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, responseData)
@@ -327,9 +288,75 @@ class TcpBridgeServer(
                                     socket.soTimeout = READ_TIMEOUT_MS
                                 }
                             }
+
+                            // 命令处理完毕，发送 CLSE
                             writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
                             appendLog("←", clientAddr, "CLSE stream=$clientStreamId")
                             streams.remove(serverStreamId)
+                        }
+                    }
+
+                    CMD_WRTE -> {
+                        val clientStreamId = msg.arg0
+                        val serverStreamId = msg.arg1
+                        val stream = streams[serverStreamId]
+
+                        // 回复 OKAY 确认收到 WRTE
+                        writeMessage(output, CMD_OKAY, serverStreamId, clientStreamId, null)
+
+                        // sync: 服务的二进制指令处理
+                        if (stream?.service == "sync:") {
+                            val syncData = msg.data
+                            if (syncData != null && syncData.size >= 4) {
+                                val syncCmd = String(syncData, 0, 4, Charsets.US_ASCII)
+                                appendLog("→", clientAddr, "Sync 指令: $syncCmd")
+
+                                when (syncCmd) {
+                                    "STAT", "LSTA" -> {
+                                        // 回复 16 字节 STAT 结构体：mode=0 表示文件不存在
+                                        val statBuf = java.nio.ByteBuffer.allocate(16).apply {
+                                            order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                                            put("STAT".toByteArray(Charsets.US_ASCII))
+                                            putInt(0) // mode = 0 (File Not Found)
+                                            putInt(0) // size = 0
+                                            putInt(0) // time = 0
+                                        }
+                                        writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, statBuf.array())
+                                    }
+                                    "QUIT" -> {
+                                        writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
+                                        streams.remove(serverStreamId)
+                                    }
+                                    else -> {
+                                        appendLog("→", clientAddr, "未处理 Sync 指令: $syncCmd")
+                                    }
+                                }
+                            }
+                        } else {
+                            // 普通 Shell WRTE 逻辑
+                            val command = msg.data?.let { raw ->
+                                val end = raw.indexOf(0)
+                                if (end >= 0) String(raw, 0, end, Charsets.UTF_8)
+                                else String(raw, Charsets.UTF_8)
+                            }?.trim() ?: ""
+
+                            if (command.isNotEmpty()) {
+                                appendLog("→", clientAddr, "请求命令: $command")
+                                val responseData = processCommandToBytes(command, clientAddr)
+
+                                if (responseData.isNotEmpty()) {
+                                    writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, responseData)
+                                    try {
+                                        socket.soTimeout = 1000
+                                        readMessage(input)
+                                    } catch (_: Exception) {} finally {
+                                        socket.soTimeout = READ_TIMEOUT_MS
+                                    }
+                                }
+                                writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
+                                appendLog("←", clientAddr, "CLSE stream=$clientStreamId")
+                                streams.remove(serverStreamId)
+                            }
                         }
                     }
 
