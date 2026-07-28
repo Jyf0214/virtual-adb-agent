@@ -5,7 +5,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.text.SimpleDateFormat
@@ -47,13 +46,13 @@ class VirtualAdbApp : Application() {
     override fun onCreate() {
         super.onCreate()
         installCrashHandler()
-        Log.i(TAG, "Virtual ADB Agent 应用启动")
+        AppLogger.i(TAG, "Virtual ADB Agent 应用启动")
     }
 
     override fun onTerminate() {
         tcpServer.stop()
         super.onTerminate()
-        Log.i(TAG, "Virtual ADB Agent 应用终止")
+        AppLogger.i(TAG, "Virtual ADB Agent 应用终止")
     }
 
     /**
@@ -94,7 +93,7 @@ class VirtualAdbApp : Application() {
                     deviceInfo = deviceInfo
                 )
 
-                Log.e(TAG, "捕获未处理异常 [${thread.name}]: ${throwable.javaClass.simpleName}: ${throwable.message}")
+                AppLogger.e(TAG, "捕获未处理异常 [${thread.name}]: ${throwable.javaClass.simpleName}: ${throwable.message}")
 
                 // 在主线程启动崩溃页面
                 Handler(Looper.getMainLooper()).post {
@@ -104,14 +103,14 @@ class VirtualAdbApp : Application() {
                         }
                         startActivity(intent)
                     } catch (e: Exception) {
-                        Log.e(TAG, "启动崩溃页面失败", e)
+                        AppLogger.e(TAG, "启动崩溃页面失败", e)
                     }
                 }
 
                 // 给崩溃页面一点时间启动，然后再终止进程
                 Thread.sleep(2000)
             } catch (e: Exception) {
-                Log.e(TAG, "崩溃处理器自身异常", e)
+                AppLogger.e(TAG, "崩溃处理器自身异常", e)
             }
 
             // 调用原始处理器（如果有），否则强制退出

@@ -17,7 +17,6 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.IBinder
 import android.util.DisplayMetrics
-import android.util.Log
 import android.view.WindowManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,7 +77,7 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         obtainScreenMetrics()
-        Log.i(TAG, "屏幕捕捉服务已创建，屏幕尺寸: ${screenWidth}x${screenHeight}, 密度: $screenDensity")
+        AppLogger.i(TAG, "屏幕捕捉服务已创建，屏幕尺寸: ${screenWidth}x${screenHeight}, 密度: $screenDensity")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -90,7 +89,7 @@ class ScreenCaptureService : Service() {
                 if (resultData != null) {
                     startCapture(resultCode, resultData)
                 } else {
-                    Log.e(TAG, "启动捕捉失败：缺少 resultData")
+                    AppLogger.e(TAG, "启动捕捉失败：缺少 resultData")
                     stopSelf()
                 }
             }
@@ -99,7 +98,7 @@ class ScreenCaptureService : Service() {
                 stopSelf()
             }
             else -> {
-                Log.d(TAG, "收到未知 action: ${intent?.action}")
+                AppLogger.d(TAG, "收到未知 action: ${intent?.action}")
             }
         }
         return START_NOT_STICKY
@@ -109,7 +108,7 @@ class ScreenCaptureService : Service() {
         stopCapture()
         serviceScope.cancel()
         super.onDestroy()
-        Log.i(TAG, "屏幕捕捉服务已销毁")
+        AppLogger.i(TAG, "屏幕捕捉服务已销毁")
     }
 
     // ─── 公开接口 ──────────────────────────────────────────────
@@ -137,7 +136,7 @@ class ScreenCaptureService : Service() {
                     null
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "获取截图失败", e)
+                AppLogger.e(TAG, "获取截图失败", e)
                 null
             }
         }
@@ -148,7 +147,7 @@ class ScreenCaptureService : Service() {
      */
     fun startCapture(resultCode: Int, resultData: Intent) {
         if (_isActive.value) {
-            Log.w(TAG, "捕捉已在运行中")
+            AppLogger.w(TAG, "捕捉已在运行中")
             return
         }
 
@@ -158,14 +157,14 @@ class ScreenCaptureService : Service() {
             mediaProjection = projectionManager.getMediaProjection(resultCode, resultData)
 
             if (mediaProjection == null) {
-                Log.e(TAG, "MediaProjection 创建失败")
+                AppLogger.e(TAG, "MediaProjection 创建失败")
                 return
             }
 
             // 注册回调处理投影停止事件
             mediaProjection?.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
-                    Log.i(TAG, "MediaProjection 被系统停止")
+                    AppLogger.i(TAG, "MediaProjection 被系统停止")
                     stopCapture()
                 }
             }, null)
@@ -202,13 +201,13 @@ class ScreenCaptureService : Service() {
 
             _isActive.value = true
             VirtualAdbApp.tcpServer.screenCaptureService = this@ScreenCaptureService
-            Log.i(TAG, "屏幕捕捉已启动，横屏画布: ${captureWidth}x${captureHeight}")
+            AppLogger.i(TAG, "屏幕捕捉已启动，横屏画布: ${captureWidth}x${captureHeight}")
 
             // 启动前台服务通知
             startForeground(NOTIFICATION_ID, buildNotification())
 
         } catch (e: Exception) {
-            Log.e(TAG, "启动屏幕捕捉失败", e)
+            AppLogger.e(TAG, "启动屏幕捕捉失败", e)
             stopCapture()
         }
     }
@@ -229,16 +228,16 @@ class ScreenCaptureService : Service() {
 
             _isActive.value = false
             VirtualAdbApp.tcpServer.screenCaptureService = null
-            Log.i(TAG, "屏幕捕捉已停止")
+            AppLogger.i(TAG, "屏幕捕捉已停止")
         } catch (e: Exception) {
-            Log.e(TAG, "停止捕捉时出错", e)
+            AppLogger.e(TAG, "停止捕捉时出错", e)
         }
 
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         } catch (e: Exception) {
-            Log.e(TAG, "停止前台服务出错", e)
+            AppLogger.e(TAG, "停止前台服务出错", e)
         }
     }
 
@@ -281,7 +280,7 @@ class ScreenCaptureService : Service() {
                 bitmap
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Image 转 Bitmap 失败", e)
+            AppLogger.e(TAG, "Image 转 Bitmap 失败", e)
             null
         }
     }

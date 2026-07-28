@@ -4,7 +4,6 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.util.DisplayMetrics
-import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -62,7 +61,7 @@ class AccessibilityBridgeService : AccessibilityService() {
         instance = this
         // 自动注册到 TCP 服务器
         VirtualAdbApp.tcpServer.accessibilityService = this
-        Log.i(TAG, "无障碍服务已连接，屏幕尺寸: ${screenWidth}x${screenHeight}")
+        AppLogger.i(TAG, "无障碍服务已连接，屏幕尺寸: ${screenWidth}x${screenHeight}")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -70,7 +69,7 @@ class AccessibilityBridgeService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
-        Log.w(TAG, "无障碍服务被系统中断")
+        AppLogger.w(TAG, "无障碍服务被系统中断")
     }
 
     override fun onDestroy() {
@@ -78,7 +77,7 @@ class AccessibilityBridgeService : AccessibilityService() {
         VirtualAdbApp.tcpServer.accessibilityService = null
         serviceScope.cancel()
         super.onDestroy()
-        Log.i(TAG, "无障碍服务已销毁")
+        AppLogger.i(TAG, "无障碍服务已销毁")
     }
 
     // ─── 公开接口 ──────────────────────────────────────────────
@@ -162,7 +161,7 @@ class AccessibilityBridgeService : AccessibilityService() {
         return try {
             rootInActiveWindow?.packageName?.toString()
         } catch (e: Exception) {
-            Log.e(TAG, "获取前台应用信息失败", e)
+            AppLogger.e(TAG, "获取前台应用信息失败", e)
             null
         }
     }
@@ -225,11 +224,11 @@ class AccessibilityBridgeService : AccessibilityService() {
         return try {
             val callback = object : AccessibilityService.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription) {
-                    Log.d(TAG, "手势 [$actionName] 执行完成")
+                    AppLogger.d(TAG, "手势 [$actionName] 执行完成")
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription) {
-                    Log.w(TAG, "手势 [$actionName] 被取消")
+                    AppLogger.w(TAG, "手势 [$actionName] 被取消")
                 }
             }
 
@@ -237,11 +236,11 @@ class AccessibilityBridgeService : AccessibilityService() {
             if (dispatched) {
                 """{"status": "ok"}"""
             } else {
-                Log.e(TAG, "手势 [$actionName] 分发失败")
+                AppLogger.e(TAG, "手势 [$actionName] 分发失败")
                 """{"status": "error", "message": "gesture dispatch failed"}"""
             }
         } catch (e: Exception) {
-            Log.e(TAG, "手势 [$actionName] 执行异常", e)
+            AppLogger.e(TAG, "手势 [$actionName] 执行异常", e)
             """{"status": "error", "message": "${e.message}"}"""
         }
     }

@@ -7,7 +7,6 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -40,14 +39,14 @@ class MainActivity : ComponentActivity() {
             captureService = binder.getService()
             captureBound = true
             VirtualAdbApp.tcpServer.screenCaptureService = captureService
-            Log.i(TAG, "屏幕捕捉服务已绑定")
+            AppLogger.i(TAG, "屏幕捕捉服务已绑定")
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             captureService = null
             captureBound = false
             VirtualAdbApp.tcpServer.screenCaptureService = null
-            Log.w(TAG, "屏幕捕捉服务已断开")
+            AppLogger.w(TAG, "屏幕捕捉服务已断开")
         }
     }
 
@@ -102,7 +101,7 @@ class MainActivity : ComponentActivity() {
         try {
             bindService(intent, captureConnection, Context.BIND_AUTO_CREATE)
         } catch (e: Exception) {
-            Log.e(TAG, "绑定屏幕捕捉服务失败", e)
+            AppLogger.e(TAG, "绑定屏幕捕捉服务失败", e)
         }
     }
 
@@ -111,7 +110,7 @@ class MainActivity : ComponentActivity() {
             try {
                 unbindService(captureConnection)
             } catch (e: Exception) {
-                Log.e(TAG, "解绑屏幕捕捉服务失败", e)
+                AppLogger.e(TAG, "解绑屏幕捕捉服务失败", e)
             }
             captureBound = false
         }

@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.virtual.adb.agent.AppLogger
 import com.virtual.adb.agent.ResolutionMode
 import com.virtual.adb.agent.RotationMode
 
@@ -284,6 +285,102 @@ fun MainScreen(
                         ) {
                             tcpLogs.forEach { entry ->
                                 LogEntryItem(entry)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ─── 系统日志 ───
+            val systemLogs by AppLogger.logs.collectAsState()
+            OutlinedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "系统日志 (${systemLogs.size})",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        if (systemLogs.isNotEmpty()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        val text = systemLogs.joinToString("\n") { "[${it.level}/${it.tag}] ${it.message}" }
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("system_logs", text)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "已复制 ${systemLogs.size} 条日志", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "复制",
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("复制", style = MaterialTheme.typography.labelSmall)
+                                }
+                                FilledTonalButton(
+                                    onClick = { AppLogger.clear() },
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text("清空", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (systemLogs.isEmpty()) {
+                        Text(
+                            text = "无系统日志",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            systemLogs.takeLast(100).forEach { entry ->
+                                val levelColor = when (entry.level) {
+                                    "E" -> MaterialTheme.colorScheme.error
+                                    "W" -> MaterialTheme.colorScheme.tertiary
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Text(
+                                        text = entry.level,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = levelColor,
+                                        modifier = Modifier.width(24.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "${entry.tag}: ${entry.message}",
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontFamily = FontFamily.Monospace
+                                            ),
+                                            maxLines = 3,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

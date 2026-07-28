@@ -5,9 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.provider.Settings
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.AndroidViewModel
+import com.virtual.adb.agent.AppLogger
 import com.virtual.adb.agent.ResolutionMode
 import com.virtual.adb.agent.RotationMode
 import com.virtual.adb.agent.ScreenCaptureService
@@ -112,7 +112,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             )?.contains("com.virtual.adb.agent") == true
         } catch (e: Exception) {
-            Log.e(TAG, "检查无障碍状态失败", e)
+            AppLogger.e(TAG, "检查无障碍状态失败", e)
             false
         }
         _a11yEnabled.value = enabled
