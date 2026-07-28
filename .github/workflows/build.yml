@@ -81,6 +81,36 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
+      - name: 缓存 debug keystore
+        uses: actions/cache@v4
+        id: keystore-cache
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-${{ github.run_id }}
+          restore-keys: |
+            debug-keystore-
+
+      - name: 生成 debug keystore（缓存未命中时）
+        if: steps.keystore-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -v \
+            -keystore ~/.android/debug.keystore \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 36500 \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US"
+          echo "▸ 生成了新的 debug keystore"
+
+      - name: 验证 keystore 缓存状态
+        run: |
+          if [ "${{ steps.keystore-cache.outputs.cache-hit }}" = "true" ]; then
+            echo "▸ 使用缓存的 debug keystore（签名一致）"
+          else
+            echo "▸ 缓存未命中，已生成新 keystore（下次构建将使用此签名）"
+          fi
+          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey | head -5
+
       - name: 生成 Gradle Wrapper
         run: |
           if [ ! -f gradlew ]; then
