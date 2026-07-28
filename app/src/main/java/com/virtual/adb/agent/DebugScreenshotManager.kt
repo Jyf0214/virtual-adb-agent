@@ -61,7 +61,7 @@ object DebugScreenshotManager {
                 filePath = file.absolutePath,
                 fileName = file.name,
                 timestamp = timestamp,
-                sizeBytes = bitmapData.size.toLong()
+                sizeBytes = imageData.size.toLong()
             )
 
             val current = _screenshots.value.toMutableList()
