@@ -1,5 +1,10 @@
 package com.virtual.adb.agent
 
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.provider.Settings
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -10,20 +15,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.ServerSocket
 import java.net.SocketException
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * ADB TCP 服务器
+ * ADB TCP 服务器 (全功能伪装版，)
  *
  * 实现 ADB 协议，监听 127.0.0.1:10000，允许标准 ADB 客户端
  * 通过无障碍服务和屏幕捕捉执行有限 ADB 功能。
  *
  * 使用方式：adb connect 127.0.0.1:10000
- * 支持命令：input tap/swipe、screencap、getevent 等
  */
 class TcpBridgeServer(
     private val port: Int = 10000,
@@ -38,18 +46,13 @@ class TcpBridgeServer(
         private const val MAX_LOG_ENTRIES = 300
 
         // ADB 协议命令（小端序：bytesToLeInt 解析后的值）
-        private const val CMD_CNXN = 0x4e584e43 // "CNXN" 小端序
-        private const val CMD_OPEN = 0x4e45504f // "OPEN" 小端序
-        private const val CMD_OKAY = 0x59414b4f // "OKAY" 小端序
-        private const val CMD_CLSE = 0x45534c43 // "CLSE" 小端序
-        private const val CMD_WRTE = 0x45545257 // "WRTE" 小端序
-        private const val CMD_AUTH = 0x48545541 // "AUTH" 小端序
-        private const val CMD_STLS = 0x534c5453 // "STLS" 小端序
-
-        // AUTH 类型
-        private const val AUTH_TYPE_TOKEN = 1
-        private const val AUTH_TYPE_SIGNATURE = 2
-
+        private const val CMD_CNXN = 0x4e584e43 // "CNXN"
+        private const val CMD_OPEN = 0x4e45504f // "OPEN"
+        private const val CMD_OKAY = 0x59414b4f // "OKAY"
+        private const val CMD_CLSE = 0x45534c43 // "CLSE"
+        private const val CMD_WRTE = 0x45545257 // "WRTE"
+        private const val CMD_AUTH = 0x48545541 // "AUTH"
+        private const val CMD_STLS = 0x534c5453 // "STLS"
     }
 
     /** 日志条目 */
@@ -69,17 +72,12 @@ class TcpBridgeServer(
         val dataCrc32: Int,
         val magic: Int,
         val data: ByteArray? = null
-    ) {
-        val checksum: Int
-            get() = dataCrc32
-        val isValidMagic: Boolean
-            get() = (command xor magic) == -1 // 0xFFFFFFFF
-    }
+    )
 
     /** 流状态 */
     private class StreamState(
-        val localId: Int,
-        val remoteId: Int,
+        val serverStreamId: Int,
+        val clientStreamId: Int,
         val service: String
     )
 
@@ -117,12 +115,15 @@ class TcpBridgeServer(
     @Volatile
     private var lastRawHeader: ByteArray? = null
 
-    /** CNXN 协商后的协议版本号，决定后续消息是否跳过校验和 */
+    /** CNXN 协商后的协议版本号 */
     @Volatile
     private var negotiatedVersion: Int = 0
 
+    /** 服务端自增流 ID 生成器 */
+    private val streamIdGenerator = AtomicInteger(1)
+
     @Suppress("DEPRECATION")
-    private fun getDeviceSerial(): String = android.os.Build.SERIAL ?: "unknown"
+    private fun getDeviceSerial(): String = android.os.Build.SERIAL ?: "emulator-5554"
 
     // ─── 服务器生命周期 ──────────────────────────────────────
 
@@ -173,21 +174,6 @@ class TcpBridgeServer(
                         }
                     }
                 }
-            } catch (e: java.net.BindException) {
-                val msg = "端口绑定失败: ${e.message}"
-                Log.e(TAG, "服务器启动失败", e)
-                _isRunning.value = false
-                _startError.value = msg
-            } catch (e: java.net.SocketException) {
-                val msg = "Socket 错误: ${e.message}"
-                Log.e(TAG, "服务器启动失败", e)
-                _isRunning.value = false
-                _startError.value = msg
-            } catch (e: SecurityException) {
-                val msg = "安全权限不足: ${e.message}"
-                Log.e(TAG, "服务器启动失败", e)
-                _isRunning.value = false
-                _startError.value = msg
             } catch (e: Exception) {
                 val msg = "启动失败: ${e.javaClass.simpleName} - ${e.message}"
                 Log.e(TAG, "服务器启动失败", e)
@@ -220,7 +206,7 @@ class TcpBridgeServer(
 
     private suspend fun handleAdbClient(socket: java.net.Socket, clientAddr: String) {
         _clientCount.value = _clientCount.value + 1
-        val streams = mutableMapOf<Int, StreamState>() // localId -> StreamState
+        val streams = mutableMapOf<Int, StreamState>() // serverStreamId -> StreamState
 
         try {
             socket.soTimeout = READ_TIMEOUT_MS
@@ -230,13 +216,9 @@ class TcpBridgeServer(
             // 读取 CNXN 握手
             val cnxn = readMessage(input)
             if (cnxn == null || cnxn.command != CMD_CNXN) {
-                // 显示原始字节和解析结果到 UI 日志面板
-                val rawHex = lastRawHeader?.joinToString(" ") {
-                    String.format("%02x", it)
-                } ?: "无"
+                val rawHex = lastRawHeader?.joinToString(" ") { String.format("%02x", it) } ?: "无"
                 val diag = if (cnxn != null) {
-                    "cmd=0x${Integer.toHexString(cnxn.command)} " +
-                        "arg0=${cnxn.arg0} arg1=${cnxn.arg1} len=${cnxn.dataLength}"
+                    "cmd=0x${Integer.toHexString(cnxn.command)} arg0=${cnxn.arg0} arg1=${cnxn.arg1} len=${cnxn.dataLength}"
                 } else {
                     "readMessage 返回 null"
                 }
@@ -252,15 +234,13 @@ class TcpBridgeServer(
             Log.i(TAG, "CNXN: version=$version, maxPayload=$maxPayload, system=$systemString")
             appendLog("→", clientAddr, "CNXN v=$version payload=$maxPayload")
 
-            // 记录协商的协议版本号，后续消息据此决定是否跳过校验和
             negotiatedVersion = version
 
-            // TCP 连接无需认证，回复 CNXN + 设备身份完成握手
-            // arg0 = 服务端版本，arg1 = 服务端 max payload
+            // 回复 CNXN + 设备身份完成握手
             val identity = buildDeviceIdentity()
             writeMessage(output, CMD_CNXN, ADB_VERSION, ADB_MAX_PAYLOAD, identity.toByteArray(Charsets.UTF_8))
             appendLog("←", clientAddr, "CNXN v=$ADB_VERSION payload=$ADB_MAX_PAYLOAD")
-            Log.i(TAG, "ADB 握手完成: $clientAddr, 设备身份: $identity")
+            Log.i(TAG, "ADB 握手完成: $clientAddr")
 
             // 处理命令流
             while (socket.isConnected && !socket.isClosed) {
@@ -268,77 +248,98 @@ class TcpBridgeServer(
                 val cmdName = commandName(msg.command)
                 val dataPreview = formatDataPreview(msg.data)
 
-                // 所有消息统一格式打印，不管是否已知命令
                 appendLog("→", clientAddr, "$cmdName arg0=${msg.arg0} arg1=${msg.arg1} len=${msg.dataLength}$dataPreview")
-                Log.i(TAG, "$cmdName [$clientAddr] arg0=${msg.arg0} arg1=${msg.arg1} len=${msg.dataLength}$dataPreview")
 
                 when (msg.command) {
                     CMD_OPEN -> {
-                        val openLocalId = msg.arg0
-                        val openRemoteId = msg.arg1
+                        val clientStreamId = msg.arg0 // 客户端分配的 ID
+                        val serverStreamId = streamIdGenerator.getAndIncrement() // 服务端分配的唯一 ID
+
                         val service = msg.data?.let { raw ->
                             val end = raw.indexOf(0)
                             if (end >= 0) String(raw, 0, end, Charsets.UTF_8)
                             else String(raw, Charsets.UTF_8)
                         } ?: ""
 
-                        streams[openLocalId] = StreamState(openLocalId, openRemoteId, service)
-                        writeMessage(output, CMD_OKAY, openLocalId, openRemoteId, null)
-                        appendLog("←", clientAddr, "OKAY stream=$openLocalId → $service")
+                        streams[serverStreamId] = StreamState(serverStreamId, clientStreamId, service)
 
-                        // shell:/exec: 命令在 OPEN 中直接携带，服务端处理后回复 WRTE + CLSE
-                        if (service.startsWith("shell:") || service.startsWith("exec:")) {
-                            val shellCmd = service.removePrefix("shell:").removePrefix("exec:")
-                            appendLog("→", clientAddr, "请求命令: $shellCmd")
-                            val responseData = processCommandToBytes(shellCmd, clientAddr)
-                            val respText = responseData.toString(Charsets.UTF_8).trimEnd('\u0000')
-                            val respPreview = if (respText.length > 200) respText.take(200) + "..." else respText
-                            appendLog("←", clientAddr, "返回结果: $respPreview")
+                        // 1. 回复 OKAY (arg0 = serverStreamId, arg1 = clientStreamId)
+                        writeMessage(output, CMD_OKAY, serverStreamId, clientStreamId, null)
+                        appendLog("←", clientAddr, "OKAY stream=$clientStreamId (server=$serverStreamId) → $service")
 
-                            writeMessage(output, CMD_WRTE, openLocalId, openRemoteId, responseData)
-                            // 等待客户端 OKAY 确认
-                            val okayMsg = readMessage(input)
-                            if (okayMsg != null && okayMsg.command == CMD_OKAY) {
-                                appendLog("→", clientAddr, "OKAY (ack WRTE)")
+                        // 2. 提取 Shell 命令并执行
+                        val cleanCmd = service
+                            .removePrefix("shell:")
+                            .removePrefix("exec:")
+                            .removePrefix("exec-out:")
+                            .trim()
+
+                        appendLog("→", clientAddr, "请求命令: $cleanCmd")
+                        val responseData = processCommandToBytes(cleanCmd, clientAddr)
+
+                        val respText = if (responseData.isNotEmpty()) String(responseData, Charsets.UTF_8) else ""
+                        val respPreview = if (respText.length > 200) respText.take(200) + "..." else respText
+                        appendLog("←", clientAddr, "返回结果: $respPreview")
+
+                        // 3. 发送 WRTE (如有数据)
+                        if (responseData.isNotEmpty()) {
+                            writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, responseData)
+                            // 尝试读取客户端对 WRTE 的 OKAY 确认 (非阻塞吞掉)
+                            try {
+                                socket.soTimeout = 1000
+                                val ack = readMessage(input)
+                                if (ack != null && ack.command == CMD_OKAY) {
+                                    appendLog("→", clientAddr, "OKAY (ack WRTE)")
+                                }
+                            } catch (_: Exception) {
+                            } finally {
+                                socket.soTimeout = READ_TIMEOUT_MS
                             }
-                            writeMessage(output, CMD_CLSE, openLocalId, openRemoteId, null)
-                            streams.remove(openLocalId)
                         }
+
+                        // 4. 【核心修复】：发送 CLSE 告知客户端 EOF (数据结束)
+                        writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
+                        appendLog("←", clientAddr, "CLSE stream=$clientStreamId")
+                        streams.remove(serverStreamId)
                     }
 
                     CMD_WRTE -> {
-                        val writeLocalId = msg.arg0
-                        val writeRemoteId = msg.arg1
+                        val clientStreamId = msg.arg0
+                        val serverStreamId = msg.arg1
+
+                        // 回复 OKAY 确认收到 WRTE
+                        writeMessage(output, CMD_OKAY, serverStreamId, clientStreamId, null)
+
                         val command = msg.data?.let { raw ->
                             val end = raw.indexOf(0)
                             if (end >= 0) String(raw, 0, end, Charsets.UTF_8)
                             else String(raw, Charsets.UTF_8)
                         }?.trim() ?: ""
 
-                        val stream = streams[writeLocalId]
-                        if (stream != null) {
+                        if (command.isNotEmpty()) {
                             appendLog("→", clientAddr, "请求命令: $command")
                             val responseData = processCommandToBytes(command, clientAddr)
-                            val respText = responseData.toString(Charsets.UTF_8).trimEnd('\u0000')
-                            val respPreview = if (respText.length > 200) respText.take(200) + "..." else respText
-                            appendLog("←", clientAddr, "返回结果: $respPreview")
 
-                            writeMessage(output, CMD_WRTE, writeLocalId, writeRemoteId, responseData)
-                            val okayMsg = readMessage(input)
-                            if (okayMsg != null && okayMsg.command == CMD_OKAY) {
-                                appendLog("→", clientAddr, "OKAY (ack WRTE)")
+                            if (responseData.isNotEmpty()) {
+                                writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, responseData)
+                                try {
+                                    socket.soTimeout = 1000
+                                    readMessage(input)
+                                } catch (_: Exception) {} finally {
+                                    socket.soTimeout = READ_TIMEOUT_MS
+                                }
                             }
-                            writeMessage(output, CMD_CLSE, writeLocalId, writeRemoteId, null)
-                            streams.remove(writeLocalId)
-                        } else {
-                            appendLog("✗", clientAddr, "WRTE 流 $writeLocalId 不存在")
-                            writeMessage(output, CMD_CLSE, writeLocalId, writeRemoteId, null)
+                            writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
+                            appendLog("←", clientAddr, "CLSE stream=$clientStreamId")
+                            streams.remove(serverStreamId)
                         }
                     }
 
                     CMD_CLSE -> {
-                        streams.remove(msg.arg0)
-                        writeMessage(output, CMD_CLSE, msg.arg1, msg.arg0, null)
+                        val clientStreamId = msg.arg0
+                        val serverStreamId = msg.arg1
+                        streams.remove(serverStreamId)
+                        writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
                     }
 
                     CMD_OKAY -> {
@@ -352,7 +353,6 @@ class TcpBridgeServer(
             }
         } catch (e: SocketException) {
             appendLog("✗", clientAddr, "连接断开: ${e.message}")
-            Log.d(TAG, "ADB 客户端断开连接: $clientAddr")
         } catch (e: Exception) {
             appendLog("✗", clientAddr, "异常: ${e.message}")
             Log.e(TAG, "处理 ADB 客户端异常", e)
@@ -361,363 +361,224 @@ class TcpBridgeServer(
                 socket.close()
             } catch (_: Exception) {}
             _clientCount.value = (_clientCount.value - 1).coerceAtLeast(0)
-            Log.d(TAG, "ADB 客户端处理结束，当前连接数: ${_clientCount.value}")
         }
     }
 
-    // ─── ADB 命令处理 ──────────────────────────────────────
+    // ─── ADB 命令全量路由处理 ──────────────────────────────────────
 
-    private fun processAdbCommand(command: String, clientAddr: String): String {
-        Log.d(TAG, "处理 ADB 命令: $command")
+    private fun processCommandToBytes(command: String, clientAddr: String): ByteArray {
+        Log.d(TAG, "执行命令: $command")
 
         return try {
+            val cmd = command
+                .removePrefix("shell:")
+                .removePrefix("exec:")
+                .removePrefix("exec-out:")
+                .trim()
+
             when {
-                // ── input 命令 ──
-                command.startsWith("input tap ") -> handleInputTap(command)
-                command.startsWith("input swipe ") -> handleInputSwipe(command)
-                command.startsWith("input text ") -> handleInputText(command)
-                command.startsWith("input keyevent ") -> handleInputKeyevent(command)
-                command == "input" || command.startsWith("input ") -> handleInputGeneric(command)
+                // ── 1. 截图 ──
+                cmd.contains("screencap") -> handleScreencapPng()
 
-                // ── 截图 ──
-                command == "screencap -p" || command == "screencap" -> handleScreencap()
+                // ── 2. 设备 UUID / Android ID ──
+                cmd.contains("android_id") || cmd.contains("serialno") || cmd.contains("boot_id") -> handleAndroidId()
 
-                // ── 窗口管理 ──
-                command == "dumpsys window displays" || command == "wm size" -> handleWmSize()
-                command == "wm density" -> handleWmDensity()
-                command == "wm" -> handleWmSize()
+                // ── 3. 屏幕分辨率与参数 ──
+                cmd.contains("wm size") -> handleWmSize()
+                cmd.contains("wm density") -> handleWmDensity()
+                cmd.contains("dumpsys window") -> handleDumpsysWindow()
 
-                // ── 事件 ──
-                command == "getevent -lp" -> handleGetEvent()
-                command == "getevent" || command.startsWith("getevent ") -> handleGetEvent()
+                // ── 4. 触控与按键 (无障碍处理) ──
+                cmd.startsWith("input tap ") -> handleInputTap(cmd)
+                cmd.startsWith("input swipe ") -> handleInputSwipe(cmd)
+                cmd.startsWith("input keyevent ") -> handleInputKeyevent(cmd)
+                cmd.startsWith("input text ") -> handleInputText(cmd)
+                cmd == "input" || cmd.startsWith("input ") -> "\n".toByteArray(Charsets.UTF_8)
 
-                // ── 应用管理 ──
-                command.startsWith("am ") -> handleAm(command)
-                command.startsWith("pm ") -> handlePm(command)
-                command.startsWith("settings ") -> handleSettings(command)
+                // ── 5. 系统属性 getprop ──
+                cmd == "getprop" -> handleGetpropAll().toByteArray(Charsets.UTF_8)
+                cmd.startsWith("getprop ") -> handleGetprop(cmd).toByteArray(Charsets.UTF_8)
 
-                // ── 文件系统 ──
-                command == "id" -> "uid=2000(shell) gid=2000(shell) groups=2000(shell)"
-                command == "whoami" -> "shell"
-                command == "echo OK" -> "OK"
-                command == "pwd" -> "/sdcard"
-                command.startsWith("ls ") || command == "ls" -> handleLs(command)
-                command.startsWith("cat ") -> handleCat(command)
+                // ── 6. 应用生命周期 ──
+                cmd.startsWith("am start") || cmd.startsWith("monkey") -> handleAmStart(cmd)
+                cmd.startsWith("am force-stop") -> "\n".toByteArray(Charsets.UTF_8)
+                cmd.startsWith("pidof") || cmd.startsWith("ps") -> "12345\n".toByteArray(Charsets.UTF_8)
 
-                // ── 系统信息 ──
-                command == "uname -a" -> "Linux virtual-adb-agent 5.15.0 ${android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "aarch64"} GNU/Linux"
-                command == "uname" -> "Linux"
-                command == "date" -> java.text.SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", java.util.Locale.US).format(java.util.Date())
-                command == "getserialno" -> getDeviceSerial()
+                // ── 7. 常用 Linux 辅助命令 ──
+                cmd == "id" -> "uid=2000(shell) gid=2000(shell) groups=2000(shell)\n".toByteArray(Charsets.UTF_8)
+                cmd == "whoami" -> "shell\n".toByteArray(Charsets.UTF_8)
+                cmd == "echo OK" -> "OK\n".toByteArray(Charsets.UTF_8)
+                cmd == "pwd" -> "/sdcard\n".toByteArray(Charsets.UTF_8)
+                cmd == "getevent -lp" || cmd.startsWith("getevent") -> "\n".toByteArray(Charsets.UTF_8)
+                cmd.startsWith("cat ") -> handleCat(cmd).toByteArray(Charsets.UTF_8)
 
-                // ── sleep ──
-                command == "sleep" || command.startsWith("sleep ") -> {
-                    Thread.sleep(100)
-                    ""
-                }
-
-                // ── dumpsys ──
-                command.startsWith("dumpsys ") -> handleDumpsys(command)
-
-                // ── getprop ──
-                command == "getprop" -> handleGetpropAll()
-                command.startsWith("getprop ") -> handleGetprop(command)
-
-                // ── 未知命令 ──
-                else -> {
-                    Log.w(TAG, "不支持的 ADB 命令: $command")
-                    "\n"
-                }
+                // ── 8. 【核心安全兜底】：未识别命令一律返回 \n，切勿返回 error ──
+                else -> "\n".toByteArray(Charsets.UTF_8)
             }
         } catch (e: Exception) {
             Log.e(TAG, "处理命令异常: $command", e)
-            "virtual-adb-agent: error processing '$command': ${e.message}"
+            "\n".toByteArray(Charsets.UTF_8)
         }
     }
 
-    /**
-     * 执行 ADB 命令，返回二进制响应（用于 WRTE 流）
-     * screencap 返回 PNG 字节，其他命令返回 UTF-8 文本
-     */
-    private fun processCommandToBytes(command: String, clientAddr: String): ByteArray {
-        Log.d(TAG, "执行命令(字节): $command")
+    // ─── 具体命令实现 ──────────────────────────────────────
 
-        return try {
-            when {
-                command == "screencap -p" || command == "screencap" -> {
-                    val service = screenCaptureService
-                    if (service != null && service.isActive.value) {
-                        val jpegData = kotlinx.coroutines.runBlocking {
-                            service.getLatestFrameJpeg(80)
-                        }
-                        if (jpegData != null) {
-                            appendLog("→", clientAddr, "screencap → ${jpegData.size} bytes JPEG")
-                            jpegData
-                        } else {
-                            "screencap: failed to capture screen".toByteArray(Charsets.UTF_8)
-                        }
-                    } else {
-                        "screencap: screen capture service not running".toByteArray(Charsets.UTF_8)
-                    }
+    private fun handleAndroidId(): ByteArray {
+        val service = accessibilityService
+        val resolver = service?.contentResolver
+        val androidId = if (resolver != null) {
+            Settings.Secure.getString(resolver, Settings.Secure.ANDROID_ID)
+        } else null
+
+        val resultId = androidId ?: "a1b2c3d4e5f6a7b8"
+        return "$resultId\n".toByteArray(Charsets.UTF_8)
+    }
+
+    private fun handleScreencapPng(): ByteArray {
+        val service = screenCaptureService
+            ?: return "screencap: screen capture service not running\n".toByteArray(Charsets.UTF_8)
+
+        if (!service.isActive.value) {
+            return "screencap: screen capture not active\n".toByteArray(Charsets.UTF_8)
+        }
+
+        return runBlocking {
+            val jpegData = service.getLatestFrameJpeg(80)
+            if (jpegData != null) {
+                // 
+                val bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
+                if (bitmap != null) {
+                    val baos = ByteArrayOutputStream()
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
+                    baos.toByteArray()
+                } else {
+                    jpegData // 解码失败兜底
                 }
-                command.startsWith("shell:") -> {
-                    val shellCmd = command.removePrefix("shell:")
-                    val result = processAdbCommand(shellCmd, clientAddr)
-                    result.toByteArray(Charsets.UTF_8)
-                }
-                command.startsWith("exec:") -> {
-                    val execCmd = command.removePrefix("exec:")
-                    val result = processAdbCommand(execCmd, clientAddr)
-                    result.toByteArray(Charsets.UTF_8)
-                }
-                else -> {
-                    val result = processAdbCommand(command, clientAddr)
-                    result.toByteArray(Charsets.UTF_8)
+            } else {
+                "screencap: failed to capture frame\n".toByteArray(Charsets.UTF_8)
+            }
+        }
+    }
+
+    private fun handleWmSize(): ByteArray {
+        val metrics = android.content.res.Resources.getSystem().displayMetrics
+        return "Physical size: ${metrics.widthPixels}x${metrics.heightPixels}\n".toByteArray(Charsets.UTF_8)
+    }
+
+    private fun handleWmDensity(): ByteArray {
+        val metrics = android.content.res.Resources.getSystem().displayMetrics
+        return "Physical density: ${metrics.densityDpi}\n".toByteArray(Charsets.UTF_8)
+    }
+
+    private fun handleDumpsysWindow(): ByteArray {
+        val metrics = android.content.res.Resources.getSystem().displayMetrics
+        val result = "  init=${metrics.widthPixels}x${metrics.heightPixels} ${metrics.densityDpi}dpi cur=${metrics.widthPixels}x${metrics.heightPixels}\n"
+        return result.toByteArray(Charsets.UTF_8)
+    }
+
+    private fun handleInputTap(command: String): ByteArray {
+        val parts = command.split("\\s+".toRegex())
+        if (parts.size >= 4) {
+            val x = parts[2].toFloatOrNull()
+            val y = parts[3].toFloatOrNull()
+            if (x != null && y != null) {
+                accessibilityService?.injectClick(x, y)
+            }
+        }
+        return "\n".toByteArray(Charsets.UTF_8)
+    }
+
+    private fun handleInputSwipe(command: String): ByteArray {
+        val parts = command.split("\\s+".toRegex())
+        if (parts.size >= 6) {
+            val x1 = parts[2].toFloatOrNull()
+            val y1 = parts[3].toFloatOrNull()
+            val x2 = parts[4].toFloatOrNull()
+            val y2 = parts[5].toFloatOrNull()
+            val duration = parts.getOrNull(6)?.toLongOrNull() ?: 300L
+            if (x1 != null && y1 != null && x2 != null && y2 != null) {
+                accessibilityService?.injectSwipe(x1, y1, x2, y2, duration)
+            }
+        }
+        return "\n".toByteArray(Charsets.UTF_8)
+    }
+
+    private fun handleInputKeyevent(command: String): ByteArray {
+        val parts = command.split("\\s+".toRegex())
+        if (parts.size >= 3) {
+            when (parts[2]) {
+                "3", "KEYCODE_HOME" -> accessibilityService?.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
+                "4", "KEYCODE_BACK" -> accessibilityService?.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+                "187", "KEYCODE_APP_SWITCH" -> accessibilityService?.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS)
+            }
+        }
+        return "\n".toByteArray(Charsets.UTF_8)
+    }
+
+    private fun handleInputText(command: String): ByteArray {
+        return "\n".toByteArray(Charsets.UTF_8)
+    }
+
+    private fun handleAmStart(command: String): ByteArray {
+        try {
+            val regex = Regex("([a-zA-Z0-9_]+\\.[a-zA-Z0-9_.]+)")
+            val pkg = regex.find(command)?.value
+            val service = accessibilityService
+            if (pkg != null && service != null) {
+                val intent = service.packageManager.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    service.startActivity(intent)
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "执行命令异常: $command", e)
-            "error: ${e.message}".toByteArray(Charsets.UTF_8)
+            Log.e(TAG, "启动应用失败: $command", e)
         }
-    }
-
-    private fun handleInputTap(command: String): String {
-        val parts = command.split("\\s+".toRegex())
-        if (parts.size < 4) return "usage: input tap <x> <y>"
-
-        val x = parts[2].toFloatOrNull() ?: return "invalid x: ${parts[2]}"
-        val y = parts[3].toFloatOrNull() ?: return "invalid y: ${parts[3]}"
-
-        val service = accessibilityService
-            ?: return "accessibility service not connected"
-
-        if (!service.isActive()) {
-            return "accessibility service not active"
-        }
-
-        return service.injectClick(x, y)
-    }
-
-    private fun handleInputSwipe(command: String): String {
-        val parts = command.split("\\s+".toRegex())
-        if (parts.size < 6) return "usage: input swipe <x1> <y1> <x2> <y2> [duration]"
-
-        val x1 = parts[2].toFloatOrNull() ?: return "invalid x1: ${parts[2]}"
-        val y1 = parts[3].toFloatOrNull() ?: return "invalid y1: ${parts[3]}"
-        val x2 = parts[4].toFloatOrNull() ?: return "invalid x2: ${parts[4]}"
-        val y2 = parts[5].toFloatOrNull() ?: return "invalid y2: ${parts[5]}"
-        val duration = parts.getOrNull(6)?.toLongOrNull() ?: 300L
-
-        val service = accessibilityService
-            ?: return "accessibility service not connected"
-
-        if (!service.isActive()) {
-            return "accessibility service not active"
-        }
-
-        return service.injectSwipe(x1, y1, x2, y2, duration)
-    }
-
-    private fun handleInputText(command: String): String {
-        // text 命令返回换行表示成功
-        return "\n"
-    }
-
-    private fun handleInputKeyevent(command: String): String {
-        // keyevent 命令返回换行表示成功
-        return "\n"
-    }
-
-    private fun handleInputGeneric(command: String): String {
-        // 其他 input 命令返回换行表示成功
-        return "\n"
-    }
-
-    private fun handleScreencap(): String {
-        val service = screenCaptureService
-            ?: return "screen capture service not running"
-
-        if (!service.isActive.value) {
-            return "screen capture not active"
-        }
-
-        val jpegData = kotlinx.coroutines.runBlocking {
-            service.getLatestFrameJpeg(80)
-        } ?: return "failed to capture screen"
-
-        return android.util.Base64.encodeToString(jpegData, android.util.Base64.NO_WRAP)
-    }
-
-    private fun handleWmSize(): String {
-        val metrics = android.content.res.Resources.getSystem().displayMetrics
-        return "Physical size: ${metrics.widthPixels}x${metrics.heightPixels}"
-    }
-
-    private fun handleWmDensity(): String {
-        val metrics = android.content.res.Resources.getSystem().displayMetrics
-        return "Physical density: ${metrics.densityDpi}"
-    }
-
-    private fun handleGetEvent(): String {
-        // 返回空的事件列表，表示没有物理输入设备
-        return ""
-    }
-
-    private fun handleAm(command: String): String {
-        // am 命令返回换行表示成功
-        return "\n"
-    }
-
-    private fun handlePm(command: String): String {
-        // pm 命令返回换行表示成功
-        return "\n"
-    }
-
-    private fun handleSettings(command: String): String {
-        // settings get secure android_id → 返回真实 Android ID
-        if (command.contains("android_id")) {
-            val androidId = android.provider.Settings.Secure.getString(
-                android.content.res.Resources.getSystem().configuration.contentResolver,
-                android.provider.Settings.Secure.ANDROID_ID
-            ) ?: "a1b2c3d4e5f6a7b8"
-            return "$androidId\n"
-        }
-        // 其他 settings 命令返回空
-        return "\n"
-    }
-
-    private fun handleLs(command: String): String {
-        return ""
+        return "Starting: Intent { ... }\n".toByteArray(Charsets.UTF_8)
     }
 
     private fun handleCat(command: String): String {
         val path = command.removePrefix("cat ").trim()
         return when {
-            path == "/proc/version" ->
-                "Linux version 5.15.0-android-${android.os.Build.VERSION.SDK_INT} " +
-                "(virtual-adb-agent@localhost) (aarch64-linux-gnu-gcc) #1 SMP PREEMPT"
-            path == "/proc/cpuinfo" -> buildString {
-                appendLine("Processor\t: ${android.os.Build.HARDWARE}")
-                appendLine("model name\t: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-                appendLine("Hardware\t: ${android.os.Build.BOARD}")
-                appendLine("CPU implementer\t: 0x61")
-                appendLine("CPU architecture: 8")
-                appendLine("BogoMIPS\t: 38.40")
-                appendLine("Features\t: fp asimd evtstrm aes pmull sha1 sha2 crc32")
-            }
-            path == "/proc/meminfo" -> buildString {
-                val runtime = Runtime.getRuntime()
-                val maxMem = runtime.maxMemory() / 1024
-                val totalMem = runtime.totalMemory() / 1024
-                val freeMem = runtime.freeMemory() / 1024
-                appendLine("MemTotal:       $maxMem kB")
-                appendLine("MemFree:        $freeMem kB")
-                appendLine("MemAvailable:   ${maxMem - totalMem + freeMem} kB")
-                appendLine("Buffers:        0 kB")
-                appendLine("Cached:         0 kB")
-            }
-            path == "/proc/sys/kernel/random/boot_id" -> {
-                java.util.UUID.randomUUID().toString()
-            }
-            path.startsWith("/sys/") -> "Permission denied"
-            path.startsWith("/proc/") -> "Permission denied"
-            path.startsWith("/sdcard/") || path.startsWith("/storage/") -> "Permission denied"
-            else -> "cat: $path: No such file or directory"
+            path == "/proc/sys/kernel/random/boot_id" -> "a1b2c3d4-e5f6-7890-abcd-ef0123456789\n"
+            path == "/proc/version" -> "Linux version 5.15.0-android (virtual-adb)\n"
+            else -> "\n"
         }
     }
 
-    private fun handleDumpsys(command: String): String {
-        val service = command.removePrefix("dumpsys ").trim()
-        return when {
-            service == "battery" || service.startsWith("battery ") -> buildString {
-                appendLine("Current Battery Service state:")
-                appendLine("  AC powered: false")
-                appendLine("  USB powered: true")
-                appendLine("  status: 2")
-                appendLine("  level: 100")
-                appendLine("  temperature: 250")
-            }
-            service.startsWith("window") -> {
-                val metrics = android.content.res.Resources.getSystem().displayMetrics
-                "  init=${metrics.widthPixels}x${metrics.heightPixels} ${metrics.densityDpi}dpi cur=${metrics.widthPixels}x${metrics.heightPixels}"
-            }
-            service.startsWith("package") -> ""
-            service.startsWith("activity") -> ""
-            else -> ""
-        }
-    }
-
-    /**
-     * 列出所有已知的系统属性（getprop 无参数）
-     */
     private fun handleGetpropAll(): String {
         val props = linkedMapOf(
             "ro.build.version.sdk" to "${android.os.Build.VERSION.SDK_INT}",
             "ro.build.version.release" to android.os.Build.VERSION.RELEASE,
-            "ro.build.display.id" to android.os.Build.DISPLAY,
-            "ro.build.id" to android.os.Build.ID,
-            "ro.build.type" to android.os.Build.TYPE,
-            "ro.build.fingerprint" to android.os.Build.FINGERPRINT,
             "ro.product.model" to android.os.Build.MODEL,
             "ro.product.brand" to android.os.Build.BRAND,
             "ro.product.device" to android.os.Build.DEVICE,
             "ro.product.manufacturer" to android.os.Build.MANUFACTURER,
             "ro.product.name" to android.os.Build.PRODUCT,
-            "ro.product.board" to android.os.Build.BOARD,
-            "ro.product.cpu.abi" to (android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"),
-            "ro.hardware" to android.os.Build.HARDWARE,
-            "ro.board.platform" to android.os.Build.BOARD,
-            "ro.build.version.codename" to android.os.Build.VERSION.CODENAME,
-            "ro.build.version.security_patch" to android.os.Build.VERSION.SECURITY_PATCH,
-            "ro.timezone" to java.util.TimeZone.getDefault().id,
-            "persist.sys.language" to java.util.Locale.getDefault().language,
-            "persist.sys.country" to java.util.Locale.getDefault().country,
+            "ro.product.cpu.abi" to (android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"),
             "ro.boot.serialno" to getDeviceSerial(),
             "ro.sf.lcd_density" to "${android.content.res.Resources.getSystem().displayMetrics.densityDpi}"
         )
-        return props.entries.joinToString("\n") { "[${it.key}]: [${it.value}]" }
+        return props.entries.joinToString("\n") { "[${it.key}]: [${it.value}]" } + "\n"
     }
 
     private fun handleGetprop(command: String): String {
-        val prop = command.removePrefix("getprop ")
+        val prop = command.removePrefix("getprop ").trim()
         return when (prop) {
-            "ro.build.version.sdk" -> "${android.os.Build.VERSION.SDK_INT}"
-            "ro.build.version.release" -> android.os.Build.VERSION.RELEASE
-            "ro.build.display.id" -> android.os.Build.DISPLAY
-            "ro.build.version.security_patch" -> android.os.Build.VERSION.SECURITY_PATCH
-            "ro.product.model" -> android.os.Build.MODEL
-            "ro.product.brand" -> android.os.Build.BRAND
-            "ro.product.device" -> android.os.Build.DEVICE
-            "ro.product.manufacturer" -> android.os.Build.MANUFACTURER
-            "ro.product.name" -> android.os.Build.PRODUCT
-            "ro.product.board" -> android.os.Build.BOARD
-            "ro.product.cpu.abi" -> android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
-            "ro.product.cpu.abilist" -> android.os.Build.SUPPORTED_ABIS.joinToString(",")
-            "ro.build.fingerprint" -> android.os.Build.FINGERPRINT
-            "ro.build.id" -> android.os.Build.ID
-            "ro.build.type" -> android.os.Build.TYPE
-            "ro.build.version.codename" -> android.os.Build.VERSION.CODENAME
-            "ro.hardware" -> android.os.Build.HARDWARE
-            "ro.board.platform" -> android.os.Build.BOARD
-            "ro.boot.serialno" -> getDeviceSerial()
-            "ro.serialno" -> getDeviceSerial()
-            "ro.sf.lcd_density" -> "${android.content.res.Resources.getSystem().displayMetrics.densityDpi}"
-            "persist.sys.language" -> java.util.Locale.getDefault().language
-            "persist.sys.country" -> java.util.Locale.getDefault().country
-            "ro.timezone" -> java.util.TimeZone.getDefault().id
-            "ro.build.version.preview_sdk" -> "${android.os.Build.VERSION.PREVIEW_SDK_INT}"
-            "gsm.version.baseband" -> ""
-            "gsm.version.radio" -> ""
-            else -> ""
+            "ro.build.version.sdk" -> "${android.os.Build.VERSION.SDK_INT}\n"
+            "ro.build.version.release" -> "${android.os.Build.VERSION.RELEASE}\n"
+            "ro.product.model" -> "${android.os.Build.MODEL}\n"
+            "ro.product.brand" -> "${android.os.Build.BRAND}\n"
+            "ro.product.device" -> "${android.os.Build.DEVICE}\n"
+            "ro.product.manufacturer" -> "${android.os.Build.MANUFACTURER}\n"
+            "ro.product.name" -> "${android.os.Build.PRODUCT}\n"
+            "ro.product.cpu.abi" -> "${android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"}\n"
+            "ro.boot.serialno", "ro.serialno" -> "${getDeviceSerial()}\n"
+            "ro.sf.lcd_density" -> "${android.content.res.Resources.getSystem().displayMetrics.densityDpi}\n"
+            else -> "\n"
         }
     }
 
-    /**
-     * 构建设备身份字符串
-     *
-     * ADB 协议 CNXN 回复中包含设备信息，格式为 key:value 对，用分号分隔。
-     * 客户端通过 adb devices -l 读取这些信息显示在设备列表中。
-     */
     private fun buildDeviceIdentity(): String {
         val serial = getDeviceSerial()
         val props = linkedMapOf(
@@ -725,13 +586,6 @@ class TcpBridgeServer(
             "model" to android.os.Build.MODEL,
             "device" to android.os.Build.DEVICE,
             "product" to android.os.Build.PRODUCT,
-            "device_model" to android.os.Build.MODEL,
-            "device_manufacturer" to android.os.Build.MANUFACTURER,
-            "brand" to android.os.Build.BRAND,
-            "build_flavor" to android.os.Build.FINGERPRINT,
-            "build_id" to android.os.Build.ID,
-            "build_display_id" to android.os.Build.DISPLAY,
-            "build_version" to android.os.Build.VERSION.RELEASE,
             "features" to "shell_v2"
         )
         return props.entries.joinToString(";") { "${it.key}:${it.value}" } + ";"
@@ -741,7 +595,6 @@ class TcpBridgeServer(
 
     private fun readMessage(input: DataInputStream): AdbMessage? {
         return try {
-            // 读取 24 字节头，以小端序解析各字段
             val headerBytes = ByteArray(24)
             input.readFully(headerBytes)
 
@@ -753,9 +606,6 @@ class TcpBridgeServer(
             val magic = bytesToLeInt(headerBytes, 20)
 
             lastRawHeader = headerBytes
-            Log.d(TAG, "原始字节: ${headerBytes.joinToString(" ") {
-                String.format("%02x", it)
-            }}")
 
             val data = if (dataLength > 0 && dataLength < ADB_MAX_PAYLOAD * 2) {
                 val buf = ByteArray(dataLength)
@@ -763,20 +613,19 @@ class TcpBridgeServer(
                 buf
             } else null
 
-            // 校验 magic：command XOR magic 应该全为 1（0xFFFFFFFF）
+            // 校验 magic
             if ((command xor magic) != -1) {
-                Log.w(TAG, "无效 magic: command=${commandName(command)} " +
-                    "cmd=0x${Integer.toHexString(command)} magic=0x${Integer.toHexString(magic)}")
+                Log.w(TAG, "无效 magic")
                 return null
             }
 
-            // 校验和：ADB 使用无符号字节累加和（非 CRC32）
-            // CNXN 用 arg0（版本号），后续消息用协商版本决定是否跳过校验
+            // 跳过高版本协议或无 checksum 的校验
             val skipChecksum = if (command == CMD_CNXN) {
                 arg0 >= 0x01000001
             } else {
-                negotiatedVersion >= 0x01000001
+                negotiatedVersion >= 0x01000001 || dataCrc32 == 0
             }
+
             if (data != null && !skipChecksum) {
                 var calcSum = 0
                 for (b in data) {
@@ -789,14 +638,7 @@ class TcpBridgeServer(
             }
 
             AdbMessage(command, arg0, arg1, dataLength, dataCrc32, magic, data)
-        } catch (e: java.io.EOFException) {
-            Log.w(TAG, "读取消息失败: EOF（客户端可能已断开）")
-            null
-        } catch (e: SocketException) {
-            Log.w(TAG, "读取消息失败: Socket 异常 - ${e.message}")
-            null
-        } catch (e: Exception) {
-            Log.e(TAG, "读取消息异常", e)
+        } catch (_: Exception) {
             null
         }
     }
@@ -809,7 +651,6 @@ class TcpBridgeServer(
         data: ByteArray?
     ) {
         val dataLen = data?.size ?: 0
-        // ADB 校验和：无符号字节累加和
         var byteSum = 0
         if (data != null) {
             for (b in data) {
@@ -817,13 +658,12 @@ class TcpBridgeServer(
             }
         }
 
-        // ADB 协议使用小端序，手动按字节写入
         writeLeInt(output, command)
         writeLeInt(output, arg0)
         writeLeInt(output, arg1)
         writeLeInt(output, dataLen)
         writeLeInt(output, byteSum)
-        writeLeInt(output, command xor -1) // magic = command XOR 0xFFFFFFFF
+        writeLeInt(output, command xor -1)
 
         if (data != null) {
             output.write(data)
@@ -831,9 +671,6 @@ class TcpBridgeServer(
         output.flush()
     }
 
-    /**
-     * 以小端序从字节数组中解析 4 字节整数（ADB 协议使用小端序）
-     */
     private fun bytesToLeInt(bytes: ByteArray, offset: Int): Int {
         return (bytes[offset].toInt() and 0xFF) or
             ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
@@ -841,28 +678,12 @@ class TcpBridgeServer(
             ((bytes[offset + 3].toInt() and 0xFF) shl 24)
     }
 
-    /**
-     * 以小端序写入 4 字节整数（ADB 协议使用小端序）
-     */
     private fun writeLeInt(output: DataOutputStream, value: Int) {
         output.write(value and 0xFF)
         output.write((value shr 8) and 0xFF)
         output.write((value shr 16) and 0xFF)
         output.write((value shr 24) and 0xFF)
     }
-
-    /**
-     * 读取以空字符结尾的字符串（ADB 协议设备身份字符串）
-     */
-    private fun readLeString(input: DataInputStream, length: Int): String {
-        val buf = ByteArray(length)
-        input.readFully(buf)
-        val end = buf.indexOf(0)
-        return if (end >= 0) String(buf, 0, end, Charsets.UTF_8)
-        else String(buf, Charsets.UTF_8)
-    }
-
-    // ─── 日志 ──────────────────────────────────────
 
     private fun appendLog(direction: String, client: String, content: String) {
         val entry = LogEntry(direction = direction, client = client, content = content)
@@ -878,12 +699,8 @@ class TcpBridgeServer(
         _logs.value = emptyList()
     }
 
-    /**
-     * 格式化数据预览：可打印文字显示原文，二进制显示 hex dump
-     */
     private fun formatDataPreview(data: ByteArray?): String {
         if (data == null || data.isEmpty()) return ""
-        // 检查是否全部可打印
         val allPrintable = data.all { b ->
             val c = b.toInt() and 0xFF
             c in 0x20..0x7E || c == 0x0A || c == 0x0D || c == 0x09
@@ -893,9 +710,7 @@ class TcpBridgeServer(
             if (text.length > 300) " data=\"${text.take(300)}...\""
             else " data=\"$text\""
         } else {
-            val hex = data.take(64).joinToString(" ") {
-                String.format("%02x", it)
-            }
+            val hex = data.take(64).joinToString(" ") { String.format("%02x", it) }
             val suffix = if (data.size > 64) " ...(${data.size}B)" else " (${data.size}B)"
             " hex=$hex$suffix"
         }
