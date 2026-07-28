@@ -1,6 +1,5 @@
 package com.virtual.adb.agent
 
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -22,7 +21,6 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.ServerSocket
 import java.net.SocketException
-import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
