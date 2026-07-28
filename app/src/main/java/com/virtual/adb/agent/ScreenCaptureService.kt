@@ -79,6 +79,8 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         obtainScreenMetrics()
+        // 及早创建通知频道，确保注册成功后再做其他操作
+        createNotificationChannel()
         AppLogger.i(TAG, "屏幕捕捉服务已创建，屏幕尺寸: ${screenWidth}x${screenHeight}, 密度: $screenDensity")
     }
 
@@ -154,8 +156,12 @@ class ScreenCaptureService : Service() {
 
         // 关键：在 Android 9+ 上，startForeground() 必须在 MediaProjection
         // 操作前调用，否则系统认为服务未处于前台，直接强杀录屏通道。
-        startForeground(NOTIFICATION_ID, buildNotification())
-        AppLogger.i(TAG, "前台通知已挂载，等待系统确认前台状态...")
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification())
+            AppLogger.i(TAG, "前台通知已挂载")
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "前台通知挂载失败: ${e.message}")
+        }
 
         // 将 MediaProjection/VirtualDisplay 初始化放到协程中延迟执行，
         // 给 ColorOS/Android 9 足够时间将服务注册为前台，避免竞态条件。
@@ -316,8 +322,6 @@ class ScreenCaptureService : Service() {
      * 构建前台服务通知
      */
     private fun buildNotification(): Notification {
-        createNotificationChannel()
-
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -339,7 +343,7 @@ class ScreenCaptureService : Service() {
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
             getString(R.string.notification_channel_name),
-            NotificationManager.IMPORTANCE_LOW
+            NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
             description = getString(R.string.notification_channel_description)
         }
