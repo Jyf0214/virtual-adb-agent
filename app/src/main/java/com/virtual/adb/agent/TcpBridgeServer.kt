@@ -255,75 +255,67 @@ class TcpBridgeServer(
             // 处理命令流
             while (socket.isConnected && !socket.isClosed) {
                 val msg = readMessage(input) ?: break
+                val cmdName = commandName(msg.command)
+                val dataPreview = formatDataPreview(msg.data)
+
+                // 所有消息统一格式打印，不管是否已知命令
+                appendLog("→", clientAddr, "$cmdName arg0=${msg.arg0} arg1=${msg.arg1} len=${msg.dataLength}$dataPreview")
+                Log.i(TAG, "$cmdName [$clientAddr] arg0=${msg.arg0} arg1=${msg.arg1} len=${msg.dataLength}$dataPreview")
 
                 when (msg.command) {
                     CMD_OPEN -> {
                         val openLocalId = msg.arg0
                         val openRemoteId = msg.arg1
                         val service = msg.data?.let { raw ->
-                            val str = String(raw, Charsets.UTF_8)
-                            str.trimEnd('\u0000')
+                            val end = raw.indexOf(0)
+                            if (end >= 0) String(raw, 0, end, Charsets.UTF_8)
+                            else String(raw, Charsets.UTF_8)
                         } ?: ""
-                        Log.i(TAG, "OPEN: local=$openLocalId remote=$openRemoteId service=$service")
-                        appendLog("→", clientAddr, "OPEN $service")
 
                         streams[openLocalId] = StreamState(openLocalId, openRemoteId, service)
                         writeMessage(output, CMD_OKAY, openLocalId, openRemoteId, null)
-                        appendLog("←", clientAddr, "OKAY stream=$openLocalId")
+                        appendLog("←", clientAddr, "OKAY stream=$openLocalId → $service")
                     }
 
                     CMD_WRTE -> {
                         val writeLocalId = msg.arg0
                         val writeRemoteId = msg.arg1
-                        val rawCmd = msg.data?.let { raw ->
+                        val command = msg.data?.let { raw ->
                             val end = raw.indexOf(0)
                             if (end >= 0) String(raw, 0, end, Charsets.UTF_8)
                             else String(raw, Charsets.UTF_8)
-                        } ?: ""
-                        val command = rawCmd.trim()
-                        Log.i(TAG, "WRTE: local=$writeLocalId remote=$writeRemoteId cmd=$command")
-                        appendLog("→", clientAddr, "WRTE: $command")
+                        }?.trim() ?: ""
 
                         val stream = streams[writeLocalId]
                         if (stream != null) {
-                            // 执行命令，返回二进制响应
                             val responseData = processCommandToBytes(command, clientAddr)
-                            val preview = if (responseData.size > 200) {
-                                String(responseData, 0, 200, Charsets.UTF_8).trimEnd() + "... (${responseData.size} bytes)"
-                            } else {
-                                String(responseData, Charsets.UTF_8).trimEnd()
-                            }
-                            appendLog("←", clientAddr, preview)
+                            val respPreview = formatDataPreview(responseData)
+                            appendLog("←", clientAddr, "WRTE ${responseData.size}B$respPreview")
 
-                            // 发送 WRTE 响应数据
                             writeMessage(output, CMD_WRTE, writeLocalId, writeRemoteId, responseData)
-                            // 等客户端 OKAY 后再发 CLSE
                             val okayMsg = readMessage(input)
                             if (okayMsg != null && okayMsg.command == CMD_OKAY) {
-                                Log.d(TAG, "收到客户端 OKAY for stream $writeLocalId")
+                                appendLog("→", clientAddr, "OKAY (ack WRTE)")
                             }
-                            // 关闭流
                             writeMessage(output, CMD_CLSE, writeLocalId, writeRemoteId, null)
                             streams.remove(writeLocalId)
-                            Log.i(TAG, "流 $writeLocalId 已关闭")
                         } else {
+                            appendLog("✗", clientAddr, "WRTE 流 $writeLocalId 不存在")
                             writeMessage(output, CMD_CLSE, writeLocalId, writeRemoteId, null)
                         }
                     }
 
                     CMD_CLSE -> {
-                        val closeLocalId = msg.arg0
-                        val closeRemoteId = msg.arg1
-                        streams.remove(closeLocalId)
-                        Log.i(TAG, "CLSE: local=$closeLocalId")
-                        appendLog("→", clientAddr, "CLSE stream=$closeLocalId")
+                        streams.remove(msg.arg0)
+                        writeMessage(output, CMD_CLSE, msg.arg1, msg.arg0, null)
+                    }
 
-                        writeMessage(output, CMD_CLSE, closeRemoteId, closeLocalId, null)
+                    CMD_OKAY -> {
+                        appendLog("→", clientAddr, "OKAY (ack)")
                     }
 
                     else -> {
-                        Log.w(TAG, "未知命令: ${commandName(msg.command)}")
-                        appendLog("✗", clientAddr, "未知命令: ${commandName(msg.command)}")
+                        appendLog("✗", clientAddr, "未处理命令，已忽略")
                     }
                 }
             }
@@ -840,6 +832,29 @@ class TcpBridgeServer(
 
     fun clearLogs() {
         _logs.value = emptyList()
+    }
+
+    /**
+     * 格式化数据预览：可打印文字显示原文，二进制显示 hex dump
+     */
+    private fun formatDataPreview(data: ByteArray?): String {
+        if (data == null || data.isEmpty()) return ""
+        // 检查是否全部可打印
+        val allPrintable = data.all { b ->
+            val c = b.toInt() and 0xFF
+            c in 0x20..0x7E || c == 0x0A || c == 0x0D || c == 0x09
+        }
+        return if (allPrintable) {
+            val text = String(data, Charsets.UTF_8).trimEnd('\u0000')
+            if (text.length > 300) " data=\"${text.take(300)}...\""
+            else " data=\"$text\""
+        } else {
+            val hex = data.take(64).joinToString(" ") {
+                String.format("%02x", it)
+            }
+            val suffix = if (data.size > 64) " ...(${data.size}B)" else " (${data.size}B)"
+            " hex=$hex$suffix"
+        }
     }
 
     private fun commandName(cmd: Int?): String {
