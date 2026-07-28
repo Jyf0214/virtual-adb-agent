@@ -275,22 +275,37 @@ class TcpBridgeServer(
                     CMD_WRTE -> {
                         val writeLocalId = msg.arg0
                         val writeRemoteId = msg.arg1
-                        val data = msg.data?.let { raw ->
-                            val str = String(raw, Charsets.UTF_8)
-                            str.trimEnd('\u0000')
+                        val rawCmd = msg.data?.let { raw ->
+                            val end = raw.indexOf(0)
+                            if (end >= 0) String(raw, 0, end, Charsets.UTF_8)
+                            else String(raw, Charsets.UTF_8)
                         } ?: ""
-                        Log.i(TAG, "WRTE: local=$writeLocalId remote=$writeRemoteId data=$data")
-                        appendLog("→", clientAddr, "WRTE: $data.trimEnd()")
+                        val command = rawCmd.trim()
+                        Log.i(TAG, "WRTE: local=$writeLocalId remote=$writeRemoteId cmd=$command")
+                        appendLog("→", clientAddr, "WRTE: $command")
 
                         val stream = streams[writeLocalId]
                         if (stream != null) {
-                            val response = processAdbCommand(data.trimEnd(), clientAddr)
-                            appendLog("←", clientAddr, response.trimEnd())
+                            // 执行命令，返回二进制响应
+                            val responseData = processCommandToBytes(command, clientAddr)
+                            val preview = if (responseData.size > 200) {
+                                String(responseData, 0, 200, Charsets.UTF_8).trimEnd() + "... (${responseData.size} bytes)"
+                            } else {
+                                String(responseData, Charsets.UTF_8).trimEnd()
+                            }
+                            appendLog("←", clientAddr, preview)
 
                             // 发送 WRTE 响应数据
-                            val responseData = response.toByteArray(Charsets.UTF_8)
                             writeMessage(output, CMD_WRTE, writeLocalId, writeRemoteId, responseData)
-                            writeMessage(output, CMD_OKAY, writeLocalId, writeRemoteId, null)
+                            // 等客户端 OKAY 后再发 CLSE
+                            val okayMsg = readMessage(input)
+                            if (okayMsg != null && okayMsg.command == CMD_OKAY) {
+                                Log.d(TAG, "收到客户端 OKAY for stream $writeLocalId")
+                            }
+                            // 关闭流
+                            writeMessage(output, CMD_CLSE, writeLocalId, writeRemoteId, null)
+                            streams.remove(writeLocalId)
+                            Log.i(TAG, "流 $writeLocalId 已关闭")
                         } else {
                             writeMessage(output, CMD_CLSE, writeLocalId, writeRemoteId, null)
                         }
@@ -394,6 +409,52 @@ class TcpBridgeServer(
         } catch (e: Exception) {
             Log.e(TAG, "处理命令异常: $command", e)
             "virtual-adb-agent: error processing '$command': ${e.message}"
+        }
+    }
+
+    /**
+     * 执行 ADB 命令，返回二进制响应（用于 WRTE 流）
+     * screencap 返回 PNG 字节，其他命令返回 UTF-8 文本
+     */
+    private fun processCommandToBytes(command: String, clientAddr: String): ByteArray {
+        Log.d(TAG, "执行命令(字节): $command")
+
+        return try {
+            when {
+                command == "screencap -p" || command == "screencap" -> {
+                    val service = screenCaptureService
+                    if (service != null && service.isActive.value) {
+                        val jpegData = kotlinx.coroutines.runBlocking {
+                            service.getLatestFrameJpeg(80)
+                        }
+                        if (jpegData != null) {
+                            appendLog("→", clientAddr, "screencap → ${jpegData.size} bytes JPEG")
+                            jpegData
+                        } else {
+                            "screencap: failed to capture screen".toByteArray(Charsets.UTF_8)
+                        }
+                    } else {
+                        "screencap: screen capture service not running".toByteArray(Charsets.UTF_8)
+                    }
+                }
+                command.startsWith("shell:") -> {
+                    val shellCmd = command.removePrefix("shell:")
+                    val result = processAdbCommand(shellCmd, clientAddr)
+                    result.toByteArray(Charsets.UTF_8)
+                }
+                command.startsWith("exec:") -> {
+                    val execCmd = command.removePrefix("exec:")
+                    val result = processAdbCommand(execCmd, clientAddr)
+                    result.toByteArray(Charsets.UTF_8)
+                }
+                else -> {
+                    val result = processAdbCommand(command, clientAddr)
+                    result.toByteArray(Charsets.UTF_8)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "执行命令异常: $command", e)
+            "error: ${e.message}".toByteArray(Charsets.UTF_8)
         }
     }
 
@@ -609,6 +670,7 @@ class TcpBridgeServer(
             "ro.hardware" -> android.os.Build.HARDWARE
             "ro.board.platform" -> android.os.Build.BOARD
             "ro.boot.serialno" -> android.os.Build.SERIAL
+            "ro.serialno" -> android.os.Build.SERIAL ?: "unknown"
             "persist.sys.language" -> java.util.Locale.getDefault().language
             "persist.sys.country" -> java.util.Locale.getDefault().country
             "ro.timezone" -> java.util.TimeZone.getDefault().id
@@ -626,7 +688,9 @@ class TcpBridgeServer(
      * 客户端通过 adb devices -l 读取这些信息显示在设备列表中。
      */
     private fun buildDeviceIdentity(): String {
-        val props = mapOf(
+        val serial = android.os.Build.SERIAL ?: "unknown"
+        val props = linkedMapOf(
+            "serialno" to serial,
             "model" to android.os.Build.MODEL,
             "device" to android.os.Build.DEVICE,
             "product" to android.os.Build.PRODUCT,
