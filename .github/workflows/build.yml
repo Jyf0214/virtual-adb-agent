@@ -94,12 +94,18 @@ jobs:
           [ -z "$APK" ] && { echo "⚠ 未找到 APK"; exit 1; }
           echo "签名: $APK"
 
-          # 移除旧签名（Android 默认 debug key）
-          zip -q -d "$APK" "META-INF/*"
+          # 移除旧签名（忽略 zip 的警告退出码）
+          zip -q -d "$APK" "META-INF/*" || :
 
           # 找 apksigner
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" /usr/local/lib/android/sdk/build-tools /opt/android/sdk/build-tools -name apksigner -type f 2>/dev/null | sort -V | tail -1)
-          if [ -z "$APKSIGNER" ]; then
+          unset APKSIGNER
+          for dir in "$ANDROID_HOME/build-tools" /usr/local/lib/android/sdk/build-tools /opt/android/sdk/build-tools; do
+            [ -d "$dir" ] || continue
+            found=$(find "$dir" -name apksigner -type f 2>/dev/null | sort -V | tail -1)
+            [ -n "$found" ] && { APKSIGNER=$found; break; }
+          done
+
+          if [ -z "${APKSIGNER:-}" ]; then
             echo "⚠ 未找到 apksigner，跳过签名"
             exit 0
           fi
