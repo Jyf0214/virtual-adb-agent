@@ -36,15 +36,26 @@ object DebugScreenshotManager {
      * 生成带时间戳的文件名并保存截图
      *
      * @param dir 保存目录
-     * @param bitmapData PNG 字节数组
+     * @param imageData 图片字节数组（JPEG 或 PNG）
      * @return 保存后的文件路径，失败返回 null
      */
-    fun saveScreenshot(dir: File, bitmapData: ByteArray): String? {
+    fun saveScreenshot(dir: File, imageData: ByteArray): String? {
         return try {
             val timestamp = System.currentTimeMillis()
             val timeStr = dateFormat.format(Date(timestamp))
-            val file = File(dir, "screencap_${timeStr}.png")
-            file.writeBytes(bitmapData)
+
+            // 检测图片格式：JPEG 文件头 FF D8 FF，否则按 PNG 处理
+            val ext = if (imageData.size >= 3 &&
+                imageData[0] == 0xFF.toByte() &&
+                imageData[1] == 0xD8.toByte() &&
+                imageData[2] == 0xFF.toByte()
+            ) {
+                "jpg"
+            } else {
+                "png"
+            }
+            val file = File(dir, "screencap_${timeStr}.$ext")
+            file.writeBytes(imageData)
 
             val info = ScreenshotInfo(
                 filePath = file.absolutePath,

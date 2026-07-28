@@ -508,6 +508,17 @@ class TcpBridgeServer(
 
             val jpegData = service.getLatestFrameJpeg(ServerConfig.jpegQuality.value)
             if (jpegData != null) {
+                // 调试存图：立即保存原始 JPEG 数据（无论后续处理是否成功）
+                if (ServerConfig.enableDebugSave.value) {
+                    val debugDir = service.getExternalFilesDir(null) ?: service.filesDir
+                    val savedPath = DebugScreenshotManager.saveScreenshot(debugDir, jpegData)
+                    if (savedPath != null) {
+                        if (ServerConfig.enableVerboseLog.value) {
+                            appendLog("ℹ", clientAddr, "原始 JPEG 已保存: $savedPath")
+                        }
+                    }
+                }
+
                 var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
                 if (bitmap == null) {
                     appendLog("✗", clientAddr, "解码失败: JPEG 数据损坏无法解析 (${jpegData.size} bytes)")
@@ -548,10 +559,10 @@ class TcpBridgeServer(
                     val savedPath = DebugScreenshotManager.saveScreenshot(debugDir, result)
                     if (savedPath != null) {
                         if (ServerConfig.enableVerboseLog.value) {
-                            appendLog("ℹ", clientAddr, "调试截图已保存: $savedPath")
+                            appendLog("ℹ", clientAddr, "处理后 PNG 已保存: $savedPath")
                         }
                     } else {
-                        appendLog("✗", clientAddr, "保存调试截图失败")
+                        appendLog("✗", clientAddr, "保存处理后 PNG 失败")
                     }
                 }
 
