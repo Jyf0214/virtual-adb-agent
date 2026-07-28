@@ -323,12 +323,33 @@ class TcpBridgeServer(
                                         }
                                         writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, statBuf.array())
                                     }
+                                    "SEND" -> {
+                                        // 回复 FAIL 强制客户端降级为 input tap/swipe
+                                        val failMsg = "Permission denied"
+                                        val failBytes = failMsg.toByteArray(Charsets.US_ASCII)
+                                        val failBuf = java.nio.ByteBuffer.allocate(8 + failBytes.size).apply {
+                                            order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                                            put("FAIL".toByteArray(Charsets.US_ASCII))
+                                            putInt(failBytes.size)
+                                            put(failBytes)
+                                        }
+                                        writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, failBuf.array())
+                                    }
                                     "QUIT" -> {
                                         writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
                                         streams.remove(serverStreamId)
                                     }
                                     else -> {
-                                        appendLog("→", clientAddr, "未处理 Sync 指令: $syncCmd")
+                                        // 其他未知 Sync 指令，回复 FAIL
+                                        val failMsg = "Operation not permitted"
+                                        val failBytes = failMsg.toByteArray(Charsets.US_ASCII)
+                                        val failBuf = java.nio.ByteBuffer.allocate(8 + failBytes.size).apply {
+                                            order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                                            put("FAIL".toByteArray(Charsets.US_ASCII))
+                                            putInt(failBytes.size)
+                                            put(failBytes)
+                                        }
+                                        writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, failBuf.array())
                                     }
                                 }
                             }
