@@ -288,9 +288,11 @@ class TcpBridgeServer(
 
                         val stream = streams[writeLocalId]
                         if (stream != null) {
+                            appendLog("→", clientAddr, "请求命令: $command")
                             val responseData = processCommandToBytes(command, clientAddr)
-                            val respPreview = formatDataPreview(responseData)
-                            appendLog("←", clientAddr, "WRTE ${responseData.size}B$respPreview")
+                            val respText = responseData.toString(Charsets.UTF_8).trimEnd('\u0000')
+                            val respPreview = if (respText.length > 200) respText.take(200) + "..." else respText
+                            appendLog("←", clientAddr, "返回结果: $respPreview")
 
                             writeMessage(output, CMD_WRTE, writeLocalId, writeRemoteId, responseData)
                             val okayMsg = readMessage(input)
@@ -395,7 +397,6 @@ class TcpBridgeServer(
                 // ── 未知命令 ──
                 else -> {
                     Log.w(TAG, "不支持的 ADB 命令: $command")
-                    appendLog("⚠", clientAddr, "未实现命令: $command")
                     "virtual-adb-agent: '$command' not implemented"
                 }
             }
@@ -411,7 +412,6 @@ class TcpBridgeServer(
      */
     private fun processCommandToBytes(command: String, clientAddr: String): ByteArray {
         Log.d(TAG, "执行命令(字节): $command")
-        appendLog("→", clientAddr, "执行命令: $command")
 
         return try {
             when {
