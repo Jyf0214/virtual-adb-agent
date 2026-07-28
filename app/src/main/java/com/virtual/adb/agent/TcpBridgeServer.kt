@@ -426,7 +426,7 @@ class TcpBridgeServer(
                 // ── 未知命令 ──
                 else -> {
                     Log.w(TAG, "不支持的 ADB 命令: $command")
-                    ""
+                    "\n"
                 }
             }
         } catch (e: Exception) {
@@ -519,18 +519,18 @@ class TcpBridgeServer(
     }
 
     private fun handleInputText(command: String): String {
-        // text 命令返回空表示成功
-        return ""
+        // text 命令返回换行表示成功
+        return "\n"
     }
 
     private fun handleInputKeyevent(command: String): String {
-        // keyevent 命令返回空表示成功
-        return ""
+        // keyevent 命令返回换行表示成功
+        return "\n"
     }
 
     private fun handleInputGeneric(command: String): String {
-        // 其他 input 命令返回空表示成功
-        return ""
+        // 其他 input 命令返回换行表示成功
+        return "\n"
     }
 
     private fun handleScreencap(): String {
@@ -564,13 +564,13 @@ class TcpBridgeServer(
     }
 
     private fun handleAm(command: String): String {
-        // am 命令返回空表示成功
-        return ""
+        // am 命令返回换行表示成功
+        return "\n"
     }
 
     private fun handlePm(command: String): String {
-        // pm 命令返回空表示成功
-        return ""
+        // pm 命令返回换行表示成功
+        return "\n"
     }
 
     private fun handleSettings(command: String): String {
@@ -580,10 +580,10 @@ class TcpBridgeServer(
                 android.content.res.Resources.getSystem().configuration.contentResolver,
                 android.provider.Settings.Secure.ANDROID_ID
             ) ?: "a1b2c3d4e5f6a7b8"
-            return androidId
+            return "$androidId\n"
         }
         // 其他 settings 命令返回空
-        return ""
+        return "\n"
     }
 
     private fun handleLs(command: String): String {
