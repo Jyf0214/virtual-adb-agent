@@ -117,6 +117,10 @@ class TcpBridgeServer(
     @Volatile
     private var lastRawHeader: ByteArray? = null
 
+    /** CNXN 协商后的协议版本号，决定后续消息是否跳过校验和 */
+    @Volatile
+    private var negotiatedVersion: Int = 0
+
     // ─── 服务器生命周期 ──────────────────────────────────────
 
     fun start(host: String = "127.0.0.1") {
@@ -244,6 +248,9 @@ class TcpBridgeServer(
             val systemString = cnxn.data?.toString(Charsets.UTF_8)?.trimEnd('\u0000') ?: ""
             Log.i(TAG, "CNXN: version=$version, maxPayload=$maxPayload, system=$systemString")
             appendLog("→", clientAddr, "CNXN v=$version payload=$maxPayload")
+
+            // 记录协商的协议版本号，后续消息据此决定是否跳过校验和
+            negotiatedVersion = version
 
             // TCP 连接无需认证，回复 CNXN + 设备身份完成握手
             // arg0 = 服务端版本，arg1 = 服务端 max payload
@@ -734,8 +741,8 @@ class TcpBridgeServer(
             }
 
             // 校验和：ADB 使用无符号字节累加和（非 CRC32）
-            // 版本 >= 0x01000001 时跳过校验（A_VERSION_SKIP_CHECKSUM）
-            if (data != null && arg0 < 0x01000001) {
+            // CNXN 协商的版本 >= 0x01000001 时跳过校验（A_VERSION_SKIP_CHECKSUM）
+            if (data != null && negotiatedVersion < 0x01000001) {
                 var calcSum = 0
                 for (b in data) {
                     calcSum += (b.toInt() and 0xFF)
