@@ -367,12 +367,25 @@ class TcpBridgeServer(
                                 val responseData = processCommandToBytes(command, clientAddr)
 
                                 if (responseData.isNotEmpty()) {
-                                    writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, responseData)
-                                    try {
-                                        socket.soTimeout = 1000
-                                        readMessage(input)
-                                    } catch (_: Exception) {} finally {
-                                        socket.soTimeout = READ_TIMEOUT_MS
+                                    // 分块传输：超过 256KB 时拆分发送，避免 Broken pipe
+                                    val chunkSize = 262144 // 256 KB
+                                    var offset = 0
+                                    val totalLen = responseData.size
+
+                                    while (offset < totalLen) {
+                                        val len = minOf(chunkSize, totalLen - offset)
+                                        val chunk = ByteArray(len)
+                                        System.arraycopy(responseData, offset, chunk, 0, len)
+                                        writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, chunk)
+                                        offset += len
+
+                                        // 读取客户端 ACK 确认
+                                        try {
+                                            socket.soTimeout = 1000
+                                            readMessage(input)
+                                        } catch (_: Exception) {} finally {
+                                            socket.soTimeout = READ_TIMEOUT_MS
+                                        }
                                     }
                                 }
                                 writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
@@ -517,6 +530,14 @@ class TcpBridgeServer(
                     val matrix = android.graphics.Matrix()
                     matrix.postRotate(degreeNeeded)
                     bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                }
+
+                // 智能缩放：宽度超过 1920 时等比缩放，避免 PNG 体积过大导致传输超时
+                val maxTargetWidth = 1920
+                if (bitmap.width > maxTargetWidth) {
+                    val scale = maxTargetWidth.toFloat() / bitmap.width
+                    val targetHeight = (bitmap.height * scale).toInt()
+                    bitmap = Bitmap.createScaledBitmap(bitmap, maxTargetWidth, targetHeight, true)
                 }
 
                 Log.i(TAG, "截图尺寸: ${bitmap.width} x ${bitmap.height}")
