@@ -84,9 +84,7 @@ jobs:
               -storepass android -keypass android \
               -dname "CN=Android Debug,O=Android,C=US"
           fi
-          echo "▸ keystore SHA256:"
-          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey 2>&1 | grep SHA256
-          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey 2>&1 | head -5
+          echo "▸ keystore 就绪: $(ls -la ~/.android/debug.keystore)"
 
       - name: 生成 Gradle Wrapper
         run: |
