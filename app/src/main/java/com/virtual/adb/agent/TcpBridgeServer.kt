@@ -1,5 +1,6 @@
 package com.virtual.adb.agent
 
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -279,13 +280,18 @@ class TcpBridgeServer(
                             appendLog("→", clientAddr, "请求命令: $cleanCmd")
                             val responseData = processCommandToBytes(cleanCmd, clientAddr)
 
+                            // 【核心修复】：CMD_OPEN 中加入高效非阻塞 256KB 分块发送
                             if (responseData.isNotEmpty()) {
-                                writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, responseData)
-                                try {
-                                    socket.soTimeout = 1000
-                                    readMessage(input)
-                                } catch (_: Exception) {} finally {
-                                    socket.soTimeout = READ_TIMEOUT_MS
+                                val chunkSize = 262144 // 256 KB
+                                var offset = 0
+                                val totalLen = responseData.size
+
+                                while (offset < totalLen) {
+                                    val len = minOf(chunkSize, totalLen - offset)
+                                    val chunk = ByteArray(len)
+                                    System.arraycopy(responseData, offset, chunk, 0, len)
+                                    writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, chunk)
+                                    offset += len
                                 }
                             }
 
@@ -370,7 +376,6 @@ class TcpBridgeServer(
                                     val chunkSize = 262144 // 256 KB
                                     var offset = 0
                                     val totalLen = responseData.size
-                                    var chunkIndex = 0
 
                                     while (offset < totalLen) {
                                         val len = minOf(chunkSize, totalLen - offset)
@@ -378,19 +383,6 @@ class TcpBridgeServer(
                                         System.arraycopy(responseData, offset, chunk, 0, len)
                                         writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, chunk)
                                         offset += len
-                                        chunkIndex++
-
-                                        if (ServerConfig.enableChunkLog.value) {
-                                            appendLog("⟳", clientAddr, "分块传输: [$chunkIndex] offset=$offset/$totalLen, size=${len}B")
-                                        }
-
-                                        // 读取客户端 ACK 确认
-                                        try {
-                                            socket.soTimeout = 1000
-                                            readMessage(input)
-                                        } catch (_: Exception) {} finally {
-                                            socket.soTimeout = READ_TIMEOUT_MS
-                                        }
                                     }
                                 }
                                 writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
@@ -442,36 +434,34 @@ class TcpBridgeServer(
                 .trim()
 
             when {
-                //── 1. 截图 ──
-                // 只有纯 screencap（不带管道 nc/gzip）才返回 PNG 截图
-                // nc/gzip 管道命令返回空行，跳过探测直接走 screencap -p
-                cmd.contains("screencap") && !cmd.contains("nc") && !cmd.contains("gzip") -> handleScreencapPng(clientAddr)
+                // 统一全量包含 screencap 的指令返回 PNG
+                cmd.contains("screencap") -> handleScreencapPng(clientAddr)
 
-                // ── 2. 设备 UUID / Android ID ──
+                // 设备 UUID / Android ID
                 cmd.contains("android_id") || cmd.contains("serialno") || cmd.contains("boot_id") -> handleAndroidId()
 
-                // ── 3. 屏幕分辨率与参数 ──
+                // 屏幕分辨率与参数
                 cmd.contains("wm size") -> handleWmSize(cmd)
                 cmd.contains("wm density") -> handleWmDensity()
                 cmd.contains("dumpsys window") -> handleDumpsysWindow()
 
-                // ── 4. 触控与按键 (无障碍处理) ──
+                // 触控与按键 (无障碍处理)
                 cmd.startsWith("input tap ") -> handleInputTap(cmd)
                 cmd.startsWith("input swipe ") -> handleInputSwipe(cmd)
                 cmd.startsWith("input keyevent ") -> handleInputKeyevent(cmd)
                 cmd.startsWith("input text ") -> handleInputText(cmd)
                 cmd == "input" || cmd.startsWith("input ") -> "\n".toByteArray(Charsets.UTF_8)
 
-                // ── 5. 系统属性 getprop ──
+                // 系统属性 getprop
                 cmd == "getprop" -> handleGetpropAll().toByteArray(Charsets.UTF_8)
                 cmd.startsWith("getprop ") -> handleGetprop(cmd).toByteArray(Charsets.UTF_8)
 
-                // ── 6. 应用生命周期 ──
+                // 应用生命周期
                 cmd.startsWith("am start") || cmd.startsWith("monkey") -> handleAmStart(cmd)
                 cmd.startsWith("am force-stop") -> "\n".toByteArray(Charsets.UTF_8)
                 cmd.startsWith("pidof") || cmd.startsWith("ps") -> "12345\n".toByteArray(Charsets.UTF_8)
 
-                // ── 7. 常用 Linux 辅助命令 ──
+                // 常用 Linux 辅助命令
                 cmd == "id" -> "uid=2000(shell) gid=2000(shell) groups=2000(shell)\n".toByteArray(Charsets.UTF_8)
                 cmd == "whoami" -> "shell\n".toByteArray(Charsets.UTF_8)
                 cmd == "echo OK" -> "OK\n".toByteArray(Charsets.UTF_8)
@@ -479,7 +469,7 @@ class TcpBridgeServer(
                 cmd == "getevent -lp" || cmd.startsWith("getevent") -> "\n".toByteArray(Charsets.UTF_8)
                 cmd.startsWith("cat ") -> handleCat(cmd).toByteArray(Charsets.UTF_8)
 
-                // ── 8. 【核心安全兜底】：未识别命令一律返回 \n，切勿返回 error ──
+                // 核心安全兜底
                 else -> "\n".toByteArray(Charsets.UTF_8)
             }
         } catch (e: Exception) {
@@ -517,8 +507,7 @@ class TcpBridgeServer(
                 var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
                     ?: return@runBlocking jpegData
 
-                // 第一步：确保图片是横屏 (width > height)
-                // MediaProjection 在某些设备上导出的 Buffer 是竖向排列的，必须先旋转为横屏
+                // 第一步：针对竖向 Buffer (如 1080x1920) 转换为标准横屏 (1920x1080)
                 if (bitmap.width < bitmap.height) {
                     val matrix = android.graphics.Matrix()
                     matrix.postRotate(270f)
@@ -528,21 +517,7 @@ class TcpBridgeServer(
                     }
                 }
 
-                // 第二步：根据 UI 设置的旋转模式进行额外旋转（如果需要）
-                val extraRotation = when (ServerConfig.rotationMode.value) {
-                    RotationMode.AUTO_SENSOR -> 0f // 已经在第一步处理了
-                    RotationMode.NONE -> 0f
-                    RotationMode.ROTATE_90 -> 90f
-                    RotationMode.ROTATE_270 -> 270f
-                }
-
-                if (extraRotation != 0f) {
-                    val matrix = android.graphics.Matrix()
-                    matrix.postRotate(extraRotation)
-                    bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-                }
-
-                // 第三步：智能缩放（此时图片已经是横屏，缩放后保持 16:9 比例）
+                // 第二步：智能缩放
                 if (ServerConfig.enableSmartScale.value) {
                     val targetWidth = ServerConfig.smartScaleTargetWidth.value
                     if (bitmap.width > targetWidth) {
@@ -556,7 +531,7 @@ class TcpBridgeServer(
                     appendLog("ℹ", clientAddr, "最终截图尺寸: ${bitmap.width} x ${bitmap.height}")
                 }
 
-                // 调试存图：根据 UI 配置决定是否保存
+                // 第三步：调试存图
                 if (ServerConfig.enableDebugSave.value) {
                     try {
                         val debugDir = service.getExternalFilesDir(null) ?: service.filesDir
