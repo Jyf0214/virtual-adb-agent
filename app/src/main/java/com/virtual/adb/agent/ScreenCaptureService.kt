@@ -169,16 +169,11 @@ class ScreenCaptureService : Service() {
                 }
             }, null)
 
-            // 根据配置决定画布方向
-            val (baseWidth, baseHeight) = if (ServerConfig.forceLandscapeCanvas.value) {
-                // 强制横屏画布：宽 > 高，避免 OPPO 等设备创建竖屏画布导致黑边
-                Pair(maxOf(screenWidth, screenHeight), minOf(screenWidth, screenHeight))
-            } else {
-                // 跟随系统真实方向
-                Pair(screenWidth, screenHeight)
-            }
-            val captureWidth = (baseWidth * CAPTURE_SCALE).toInt()
-            val captureHeight = (baseHeight * CAPTURE_SCALE).toInt()
+            // 始终使用物理屏幕真实宽高创建画布，避免 ColorOS 等系统
+            // 因 VirtualDisplay 方向与物理方向不一致而强杀 MediaProjection。
+            // 横屏转换由 TcpBridgeServer.handleScreencapPng 旋转逻辑完成。
+            val captureWidth = (screenWidth * CAPTURE_SCALE).toInt()
+            val captureHeight = (screenHeight * CAPTURE_SCALE).toInt()
             val captureDensity = (screenDensity * CAPTURE_SCALE).toInt()
 
             imageReader = ImageReader.newInstance(
