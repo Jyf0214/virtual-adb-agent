@@ -280,7 +280,7 @@ class TcpBridgeServer(
 
                             // 【核心修复】：CMD_OPEN 中加入高效非阻塞 256KB 分块发送
                             if (responseData.isNotEmpty()) {
-                                val chunkSize = 262144 // 256 KB
+                                val chunkSize = 786432 // 768 KB
                                 var offset = 0
                                 val totalLen = responseData.size
 
@@ -371,7 +371,7 @@ class TcpBridgeServer(
 
                                 if (responseData.isNotEmpty()) {
                                     // 分块传输：超过 256KB 时拆分发送，避免 Broken pipe
-                                    val chunkSize = 262144 // 256 KB
+                                    val chunkSize = 786432 // 768 KB
                                     var offset = 0
                                     val totalLen = responseData.size
 
