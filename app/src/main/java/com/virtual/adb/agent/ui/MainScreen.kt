@@ -596,7 +596,6 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
     val rotationMode by viewModel.rotationMode.collectAsState()
     val customWidth by viewModel.customWidth.collectAsState()
     val customHeight by viewModel.customHeight.collectAsState()
-    val forceLandscapeCanvas by viewModel.forceLandscapeCanvas.collectAsState()
     val enableSmartScale by viewModel.enableSmartScale.collectAsState()
     val smartScaleTargetWidth by viewModel.smartScaleTargetWidth.collectAsState()
     val jpegQuality by viewModel.jpegQuality.collectAsState()
@@ -718,29 +717,6 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
                 text = "截图性能",
                 style = MaterialTheme.typography.titleSmall
             )
-
-            // 强制横屏画布开关
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "强制横屏画布",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = "创建 VirtualDisplay 时强制宽>高，避免竖屏黑边（需重启捕捉）",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = forceLandscapeCanvas,
-                    onCheckedChange = { viewModel.toggleForceLandscapeCanvas() }
-                )
-            }
 
             // 智能缩放开关
             Row(
