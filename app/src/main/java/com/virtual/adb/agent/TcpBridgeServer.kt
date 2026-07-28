@@ -491,15 +491,32 @@ class TcpBridgeServer(
         return runBlocking {
             val jpegData = service.getLatestFrameJpeg(80)
             if (jpegData != null) {
-                // 
-                val bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
-                if (bitmap != null) {
-                    val baos = ByteArrayOutputStream()
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
-                    baos.toByteArray()
-                } else {
-                    jpegData // 解码失败兜底
+                var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
+                    ?: return@runBlocking jpegData
+
+                // 获取系统当前屏幕旋转角度
+                val displayManager = service.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager
+                val display = displayManager?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+                val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
+
+                // 根据系统旋转状态确定需要矫正的角度
+                val degreeNeeded = when (rotation) {
+                    android.view.Surface.ROTATION_90 -> 90f
+                    android.view.Surface.ROTATION_270 -> 270f
+                    android.view.Surface.ROTATION_180 -> 180f
+                    else -> 0f
                 }
+
+                // 仅当系统处于横屏但 Bitmap 仍是竖屏时才旋转
+                if (degreeNeeded != 0f && bitmap.width < bitmap.height) {
+                    val matrix = android.graphics.Matrix()
+                    matrix.postRotate(degreeNeeded)
+                    bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                }
+
+                val baos = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
+                baos.toByteArray()
             } else {
                 "screencap: failed to capture frame\n".toByteArray(Charsets.UTF_8)
             }
