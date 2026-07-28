@@ -121,6 +121,9 @@ class TcpBridgeServer(
     @Volatile
     private var negotiatedVersion: Int = 0
 
+    @Suppress("DEPRECATION")
+    private fun getDeviceSerial(): String = android.os.Build.SERIAL ?: "unknown"
+
     // ─── 服务器生命周期 ──────────────────────────────────────
 
     fun start(host: String = "127.0.0.1") {
@@ -405,7 +408,7 @@ class TcpBridgeServer(
                 command == "uname -a" -> "Linux virtual-adb-agent 5.15.0 ${android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "aarch64"} GNU/Linux"
                 command == "uname" -> "Linux"
                 command == "date" -> java.text.SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", java.util.Locale.US).format(java.util.Date())
-                command == "getserialno" -> android.os.Build.SERIAL ?: "unknown"
+                command == "getserialno" -> getDeviceSerial()
 
                 // ── sleep ──
                 command == "sleep" || command.startsWith("sleep ") -> {
@@ -663,7 +666,7 @@ class TcpBridgeServer(
             "ro.timezone" to java.util.TimeZone.getDefault().id,
             "persist.sys.language" to java.util.Locale.getDefault().language,
             "persist.sys.country" to java.util.Locale.getDefault().country,
-            "ro.boot.serialno" to (android.os.Build.SERIAL ?: "unknown")
+            "ro.boot.serialno" to getDeviceSerial()
         )
         return props.entries.joinToString("\n") { "[${it.key}]: [${it.value}]" }
     }
@@ -689,8 +692,8 @@ class TcpBridgeServer(
             "ro.build.version.codename" -> android.os.Build.VERSION.CODENAME
             "ro.hardware" -> android.os.Build.HARDWARE
             "ro.board.platform" -> android.os.Build.BOARD
-            "ro.boot.serialno" -> android.os.Build.SERIAL
-            "ro.serialno" -> android.os.Build.SERIAL ?: "unknown"
+            "ro.boot.serialno" -> getDeviceSerial()
+            "ro.serialno" -> getDeviceSerial()
             "persist.sys.language" -> java.util.Locale.getDefault().language
             "persist.sys.country" -> java.util.Locale.getDefault().country
             "ro.timezone" -> java.util.TimeZone.getDefault().id
@@ -708,7 +711,7 @@ class TcpBridgeServer(
      * 客户端通过 adb devices -l 读取这些信息显示在设备列表中。
      */
     private fun buildDeviceIdentity(): String {
-        val serial = android.os.Build.SERIAL ?: "unknown"
+        val serial = getDeviceSerial()
         val props = linkedMapOf(
             "serialno" to serial,
             "model" to android.os.Build.MODEL,
