@@ -70,15 +70,23 @@ jobs:
       - name: 构建 Debug APK
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: 注入缓存调试签名（复用缓存或首次生成）
+      # 签名密钥由独立的 actions/cache 管理，不走 Gradle 缓存
+      - name: 缓存调试签名密钥
+        id: cache-key
+        uses: actions/cache@v4
+        with:
+          path: ~/debug_signing_key.keystore
+          key: debug-signing-key-v1
+
+      - name: 注入调试签名
         shell: bash
         run: |
-          KS_PATH="$HOME/.gradle/caches/random_debug.keystore"
+          KS_PATH=~/debug_signing_key.keystore
           KSPASS=androiddebug
           KSALIAS=debug
 
           if [ -f "$KS_PATH" ]; then
-            echo "✓ 复用缓存签名: $KS_PATH"
+            echo "✓ 复用缓存签名"
           else
             echo "○ 首次运行，生成新签名密钥..."
             keytool -genkeypair -v \
@@ -92,7 +100,6 @@ jobs:
 
           APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
           [ -z "$APK" ] && { echo "⚠ 未找到 APK"; exit 1; }
-          echo "签名: $APK"
 
           # 移除旧签名（忽略 zip 的警告退出码）
           zip -q -d "$APK" "META-INF/*" || :
