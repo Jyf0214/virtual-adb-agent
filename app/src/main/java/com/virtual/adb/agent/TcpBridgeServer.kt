@@ -490,7 +490,7 @@ class TcpBridgeServer(
         }
 
         return runBlocking {
-            val jpegData = service.getLatestFrameJpeg(80)
+            val jpegData = service.getLatestFrameJpeg(100)
             if (jpegData != null) {
                 var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
                     ?: return@runBlocking jpegData
@@ -518,6 +518,8 @@ class TcpBridgeServer(
                     matrix.postRotate(degreeNeeded)
                     bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
                 }
+
+                Log.i(TAG, "截图尺寸: ${bitmap.width} x ${bitmap.height}")
 
                 val baos = ByteArrayOutputStream()
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)

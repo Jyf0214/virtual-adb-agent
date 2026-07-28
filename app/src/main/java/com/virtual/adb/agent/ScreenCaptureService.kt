@@ -42,11 +42,11 @@ class ScreenCaptureService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "screen_capture_channel"
         private const val NOTIFICATION_ID = 1001
 
-        /** ImageReader 缩放比例（降低分辨率以节省内存） */
-        private const val CAPTURE_SCALE = 0.5f
+        /** ImageReader 缩放比例（1.0 = 原始分辨率，0.5 = 半分辨率） */
+        private const val CAPTURE_SCALE = 1.0f
 
         /** JPEG 压缩质量默认值 */
-        private const val DEFAULT_JPEG_QUALITY = 80
+        private const val DEFAULT_JPEG_QUALITY = 100
 
         private const val ACTION_START = "com.virtual.adb.agent.action.START_CAPTURE"
         private const val ACTION_STOP = "com.virtual.adb.agent.action.STOP_CAPTURE"
