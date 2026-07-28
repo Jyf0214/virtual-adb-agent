@@ -28,6 +28,8 @@ enum class RotationMode {
  * UI 界面通过修改这些 StateFlow 来实时控制行为
  */
 object ServerConfig {
+    // ─── 分辨率配置 ─────────────────────────────────────────
+
     /** 分辨率返回模式 */
     val resolutionMode = MutableStateFlow(ResolutionMode.REAL_SYSTEM)
 
@@ -39,4 +41,26 @@ object ServerConfig {
 
     /** 自定义分辨率 - 高度 */
     val customHeight = MutableStateFlow(1080)
+
+    // ─── 截图性能配置 ───────────────────────────────────────
+
+    /** 启用智能缩放（宽度超过目标值时等比缩放） */
+    val enableSmartScale = MutableStateFlow(true)
+
+    /** 智能缩放目标宽度 */
+    val smartScaleTargetWidth = MutableStateFlow(1280)
+
+    /** JPEG 压缩质量 (1-100) */
+    val jpegQuality = MutableStateFlow(100)
+
+    // ─── 调试配置 ───────────────────────────────────────────
+
+    /** 启用调试存图（每次截图保存一份到本地磁盘） */
+    val enableDebugSave = MutableStateFlow(true)
+
+    /** 启用详细日志（打印截图尺寸、耗时等信息） */
+    val enableVerboseLog = MutableStateFlow(true)
+
+    /** 启用分块传输日志（打印每个分块的传输详情） */
+    val enableChunkLog = MutableStateFlow(false)
 }

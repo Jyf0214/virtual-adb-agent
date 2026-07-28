@@ -73,6 +73,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val customWidth: StateFlow<Int> = ServerConfig.customWidth
     val customHeight: StateFlow<Int> = ServerConfig.customHeight
 
+    // 截图性能配置
+    val enableSmartScale: StateFlow<Boolean> = ServerConfig.enableSmartScale
+    val smartScaleTargetWidth: StateFlow<Int> = ServerConfig.smartScaleTargetWidth
+    val jpegQuality: StateFlow<Int> = ServerConfig.jpegQuality
+
+    // 调试配置
+    val enableDebugSave: StateFlow<Boolean> = ServerConfig.enableDebugSave
+    val enableVerboseLog: StateFlow<Boolean> = ServerConfig.enableVerboseLog
+    val enableChunkLog: StateFlow<Boolean> = ServerConfig.enableChunkLog
+
     // ─── MediaProjection 授权结果待处理 ──────────────────────
     private var pendingProjectionResultCode = 0
     private var pendingProjectionData: Intent? = null
@@ -262,5 +272,39 @@ s.close()
     fun setCustomResolution(width: Int, height: Int) {
         ServerConfig.customWidth.value = width
         ServerConfig.customHeight.value = height
+    }
+
+    // ─── 截图性能配置修改 ──────────────────────────────────
+
+    /** 切换智能缩放 */
+    fun toggleSmartScale() {
+        ServerConfig.enableSmartScale.value = !ServerConfig.enableSmartScale.value
+    }
+
+    /** 设置智能缩放目标宽度 */
+    fun setSmartScaleTargetWidth(width: Int) {
+        ServerConfig.smartScaleTargetWidth.value = width
+    }
+
+    /** 设置 JPEG 压缩质量 */
+    fun setJpegQuality(quality: Int) {
+        ServerConfig.jpegQuality.value = quality.coerceIn(1, 100)
+    }
+
+    // ─── 调试配置修改 ──────────────────────────────────────
+
+    /** 切换调试存图 */
+    fun toggleDebugSave() {
+        ServerConfig.enableDebugSave.value = !ServerConfig.enableDebugSave.value
+    }
+
+    /** 切换详细日志 */
+    fun toggleVerboseLog() {
+        ServerConfig.enableVerboseLog.value = !ServerConfig.enableVerboseLog.value
+    }
+
+    /** 切换分块传输日志 */
+    fun toggleChunkLog() {
+        ServerConfig.enableChunkLog.value = !ServerConfig.enableChunkLog.value
     }
 }

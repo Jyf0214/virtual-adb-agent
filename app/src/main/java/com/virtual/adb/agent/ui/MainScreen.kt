@@ -393,6 +393,12 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
     val rotationMode by viewModel.rotationMode.collectAsState()
     val customWidth by viewModel.customWidth.collectAsState()
     val customHeight by viewModel.customHeight.collectAsState()
+    val enableSmartScale by viewModel.enableSmartScale.collectAsState()
+    val smartScaleTargetWidth by viewModel.smartScaleTargetWidth.collectAsState()
+    val jpegQuality by viewModel.jpegQuality.collectAsState()
+    val enableDebugSave by viewModel.enableDebugSave.collectAsState()
+    val enableVerboseLog by viewModel.enableVerboseLog.collectAsState()
+    val enableChunkLog by viewModel.enableChunkLog.collectAsState()
 
     Card(
         modifier = Modifier
@@ -499,6 +505,171 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
+            }
+
+            HorizontalDivider()
+
+            // ─── 截图性能配置 ───
+            Text(
+                text = "截图性能",
+                style = MaterialTheme.typography.titleSmall
+            )
+
+            // 智能缩放开关
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "智能缩放",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "宽度超过目标值时等比缩放，减小图片体积",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = enableSmartScale,
+                    onCheckedChange = { viewModel.toggleSmartScale() }
+                )
+            }
+
+            // 缩放目标宽度
+            if (enableSmartScale) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "目标宽度:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    listOf(720, 1280, 1920).forEach { width ->
+                        OutlinedButton(
+                            onClick = { viewModel.setSmartScaleTargetWidth(width) },
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text(
+                                text = "${width}p",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            }
+
+            // JPEG 质量
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "JPEG 质量: ${jpegQuality}%",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "100% = 无损，80% = 有损压缩",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(80, 90, 100).forEach { quality ->
+                        OutlinedButton(
+                            onClick = { viewModel.setJpegQuality(quality) },
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text(
+                                text = "${quality}%",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider()
+
+            // ─── 调试配置 ───
+            Text(
+                text = "调试选项",
+                style = MaterialTheme.typography.titleSmall
+            )
+
+            // 调试存图
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "调试存图",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "每次截图保存一份到本地: files/adb_screencap_debug.png",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = enableDebugSave,
+                    onCheckedChange = { viewModel.toggleDebugSave() }
+                )
+            }
+
+            // 详细日志
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "详细日志",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "打印截图尺寸、耗时、文件大小等信息",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = enableVerboseLog,
+                    onCheckedChange = { viewModel.toggleVerboseLog() }
+                )
+            }
+
+            // 分块传输日志
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "分块传输日志",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "打印每个数据块的传输详情（调试用）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = enableChunkLog,
+                    onCheckedChange = { viewModel.toggleChunkLog() }
+                )
             }
         }
     }

@@ -371,6 +371,7 @@ class TcpBridgeServer(
                                     val chunkSize = 262144 // 256 KB
                                     var offset = 0
                                     val totalLen = responseData.size
+                                    var chunkIndex = 0
 
                                     while (offset < totalLen) {
                                         val len = minOf(chunkSize, totalLen - offset)
@@ -378,6 +379,11 @@ class TcpBridgeServer(
                                         System.arraycopy(responseData, offset, chunk, 0, len)
                                         writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, chunk)
                                         offset += len
+                                        chunkIndex++
+
+                                        if (ServerConfig.enableChunkLog.value) {
+                                            Log.d(TAG, "分块传输: [$chunkIndex] offset=$offset/$totalLen, size=${len}B")
+                                        }
 
                                         // 读取客户端 ACK 确认
                                         try {
@@ -503,7 +509,9 @@ class TcpBridgeServer(
         }
 
         return runBlocking {
-            val jpegData = service.getLatestFrameJpeg(100)
+            val startTime = if (ServerConfig.enableVerboseLog.value) System.currentTimeMillis() else 0
+
+            val jpegData = service.getLatestFrameJpeg(ServerConfig.jpegQuality.value)
             if (jpegData != null) {
                 var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
                     ?: return@runBlocking jpegData
@@ -532,19 +540,46 @@ class TcpBridgeServer(
                     bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
                 }
 
-                // 智能缩放：宽度超过 1920 时等比缩放，避免 PNG 体积过大导致传输超时
-                val maxTargetWidth = 1920
-                if (bitmap.width > maxTargetWidth) {
-                    val scale = maxTargetWidth.toFloat() / bitmap.width
-                    val targetHeight = (bitmap.height * scale).toInt()
-                    bitmap = Bitmap.createScaledBitmap(bitmap, maxTargetWidth, targetHeight, true)
+                // 智能缩放：根据 UI 配置决定是否缩放
+                if (ServerConfig.enableSmartScale.value) {
+                    val targetWidth = ServerConfig.smartScaleTargetWidth.value
+                    if (bitmap.width > targetWidth) {
+                        val scale = targetWidth.toFloat() / bitmap.width
+                        val targetHeight = (bitmap.height * scale).toInt()
+                        bitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+                    }
                 }
 
-                Log.i(TAG, "截图尺寸: ${bitmap.width} x ${bitmap.height}")
+                if (ServerConfig.enableVerboseLog.value) {
+                    Log.i(TAG, "截图尺寸: ${bitmap.width} x ${bitmap.height}")
+                }
+
+                // 调试存图：根据 UI 配置决定是否保存
+                if (ServerConfig.enableDebugSave.value) {
+                    try {
+                        val debugDir = service.getExternalFilesDir(null) ?: service.filesDir
+                        val debugFile = java.io.File(debugDir, "adb_screencap_debug.png")
+                        java.io.FileOutputStream(debugFile).use { out ->
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                        }
+                        if (ServerConfig.enableVerboseLog.value) {
+                            Log.d(TAG, "调试截图已保存: ${debugFile.absolutePath}")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "保存调试截图失败", e)
+                    }
+                }
 
                 val baos = ByteArrayOutputStream()
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
-                baos.toByteArray()
+                val result = baos.toByteArray()
+
+                if (ServerConfig.enableVerboseLog.value) {
+                    val elapsed = System.currentTimeMillis() - startTime
+                    Log.i(TAG, "截图完成: ${result.size} bytes, 耗时 ${elapsed}ms")
+                }
+
+                result
             } else {
                 "screencap: failed to capture frame\n".toByteArray(Charsets.UTF_8)
             }
