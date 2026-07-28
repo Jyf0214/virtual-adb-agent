@@ -54,6 +54,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 设置 JDK 17
+        id: setup-java
         uses: actions/setup-java@v4
         with:
           java-version: '17'
@@ -69,6 +70,49 @@ jobs:
 
       - name: 构建 Debug APK
         run: ./gradlew assembleDebug --no-daemon
+
+      - name: 随机调试签名（JDK 17 缓存命中时）
+        if: steps.setup-java.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          # 生成随机密钥库（密码、别名、证书字段全部随机）
+          KSPASS=$(openssl rand -hex 16)
+          DNAME="CN=$(openssl rand -hex 4),OU=$(openssl rand -hex 4),O=$(openssl rand -hex 4),L=$(openssl rand -hex 4),ST=$(openssl rand -hex 4),C=XX"
+          KS_PATH="${{ runner.temp }}/random_debug.keystore"
+          keytool -genkeypair -v \
+            -keystore "$KS_PATH" \
+            -alias debug \
+            -keyalg RSA -keysize 2048 -validity 36500 \
+            -storepass "$KSPASS" -keypass "$KSPASS" \
+            -dname "$DNAME" -noprompt
+
+          # 定位 APK
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          echo "签名 APK: $APK"
+
+          # 移除旧签名（Android 默认 debug key）
+          zip -q -d "$APK" "META-INF/*"
+
+          # 寻找 apksigner
+          APKSIGNER=""
+          for dir in "$ANDROID_HOME/build-tools" /usr/local/lib/android/sdk/build-tools /opt/android/sdk/build-tools; do
+            found=$(find "$dir" -name apksigner -type f 2>/dev/null | sort -V | tail -1)
+            [ -n "$found" ] && { APKSIGNER=$found; break; }
+          done
+
+          if [ -z "$APKSIGNER" ]; then
+            echo "⚠ 未找到 apksigner，跳过随机签名"
+            exit 0
+          fi
+
+          # 注入随机调试签名
+          "$APKSIGNER" sign \
+            --ks "$KS_PATH" \
+            --ks-pass "pass:$KSPASS" \
+            --ks-key-alias debug \
+            --key-pass "pass:$KSPASS" \
+            "$APK"
+          echo "✓ 随机调试签名完成"
 
       - name: 上传 Debug APK（保留 1 天）
         uses: actions/upload-artifact@v4
