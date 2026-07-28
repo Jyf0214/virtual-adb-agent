@@ -35,7 +35,7 @@ class TcpBridgeServer(
         private const val ADB_VERSION = 0x01000001
         private const val ADB_MAX_PAYLOAD = 1048576
         private const val READ_TIMEOUT_MS = 30_000
-        private const val MAX_LOG_ENTRIES = 100
+        private const val MAX_LOG_ENTRIES = 300
 
         // ADB 协议命令（小端序：bytesToLeInt 解析后的值）
         private const val CMD_CNXN = 0x4e584e43 // "CNXN" 小端序
@@ -760,8 +760,13 @@ class TcpBridgeServer(
             }
 
             // 校验和：ADB 使用无符号字节累加和（非 CRC32）
-            // CNXN 协商的版本 >= 0x01000001 时跳过校验（A_VERSION_SKIP_CHECKSUM）
-            if (data != null && negotiatedVersion < 0x01000001) {
+            // CNXN 用 arg0（版本号），后续消息用协商版本决定是否跳过校验
+            val skipChecksum = if (command == CMD_CNXN) {
+                arg0 >= 0x01000001
+            } else {
+                negotiatedVersion >= 0x01000001
+            }
+            if (data != null && !skipChecksum) {
                 var calcSum = 0
                 for (b in data) {
                     calcSum += (b.toInt() and 0xFF)

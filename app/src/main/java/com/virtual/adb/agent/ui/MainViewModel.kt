@@ -63,16 +63,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** TCP 启动错误 */
     val tcpStartError: StateFlow<String> = tcpServer.startError
 
-    /** Logcat 原生日志 */
-    val logcatLogs: StateFlow<List<String>> = logcatReader.logs
-    val logcatRunning: StateFlow<Boolean> = logcatReader.isRunning
-
     /** MediaProjection 授权结果待处理 */
     private var pendingProjectionResultCode = 0
     private var pendingProjectionData: Intent? = null
 
     private val tcpServer get() = VirtualAdbApp.tcpServer
-    private val logcatReader get() = VirtualAdbApp.logcatReader
 
     init {
         checkA11yStatus()
@@ -233,19 +228,5 @@ s.close()
      */
     fun clearTcpLogs() {
         tcpServer.clearLogs()
-    }
-
-    // ─── Logcat 控制 ──────────────────────────────────────────
-
-    fun toggleLogcat() {
-        if (logcatReader.isRunning.value) {
-            logcatReader.stop()
-        } else {
-            logcatReader.start()
-        }
-    }
-
-    fun clearLogcatLogs() {
-        logcatReader.clear()
     }
 }
