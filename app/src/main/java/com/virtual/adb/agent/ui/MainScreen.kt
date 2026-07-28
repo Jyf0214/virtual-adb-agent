@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -35,6 +34,7 @@ import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -43,6 +43,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -50,6 +51,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.virtual.adb.agent.ResolutionMode
+import com.virtual.adb.agent.RotationMode
 
 /**
  * 主界面 Compose UI
@@ -133,6 +136,9 @@ fun MainScreen(
                 },
                 actionText = if (captureRunning) "停止捕捉" else "授权并启动"
             )
+
+            // ─── 服务器配置 ───
+            ServerConfigCard(viewModel = viewModel)
 
             // ─── TCP 服务控制 ───
             Card(
@@ -369,6 +375,128 @@ private fun PermissionCard(
             } else {
                 OutlinedButton(onClick = onAction) {
                     Text(text = actionText, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 服务器配置卡片
+ *
+ * 包含：分辨率模式、截图旋转模式、自定义分辨率输入
+ */
+@Composable
+private fun ServerConfigCard(viewModel: MainViewModel) {
+    val resolutionMode by viewModel.resolutionMode.collectAsState()
+    val rotationMode by viewModel.rotationMode.collectAsState()
+    val customWidth by viewModel.customWidth.collectAsState()
+    val customHeight by viewModel.customHeight.collectAsState()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // ─── 分辨率模式 ───
+            Text(
+                text = "分辨率返回模式",
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                text = "控制 wm size 命令返回给 ADB 客户端的分辨率",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            ResolutionMode.entries.forEach { mode ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.RadioButton(
+                        selected = resolutionMode == mode,
+                        onClick = { viewModel.setResolutionMode(mode) }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = when (mode) {
+                            ResolutionMode.REAL_SYSTEM -> "跟随系统真实"
+                            ResolutionMode.FORCE_LANDSCAPE -> "强制横屏 (宽>高)"
+                            ResolutionMode.FORCE_PORTRAIT -> "强制竖屏 (宽<高)"
+                            ResolutionMode.CUSTOM -> "自定义"
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            // ─── 自定义分辨率输入 ───
+            if (resolutionMode == ResolutionMode.CUSTOM) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = customWidth.toString(),
+                        onValueChange = { value ->
+                            value.toIntOrNull()?.let { viewModel.setCustomResolution(it, customHeight) }
+                        },
+                        label = { Text("宽度") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = customHeight.toString(),
+                        onValueChange = { value ->
+                            value.toIntOrNull()?.let { viewModel.setCustomResolution(customWidth, it) }
+                        },
+                        label = { Text("高度") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+            }
+
+            HorizontalDivider()
+
+            // ─── 截图旋转模式 ───
+            Text(
+                text = "截图旋转矫正",
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                text = "控制截图返回给 ADB 客户端时的旋转角度",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            RotationMode.entries.forEach { mode ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.RadioButton(
+                        selected = rotationMode == mode,
+                        onClick = { viewModel.setRotationMode(mode) }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = when (mode) {
+                            RotationMode.AUTO_SENSOR -> "智能感应 (Display.rotation)"
+                            RotationMode.NONE -> "不旋转 (原图)"
+                            RotationMode.ROTATE_90 -> "强制 90°"
+                            RotationMode.ROTATE_270 -> "强制 270°"
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
         }

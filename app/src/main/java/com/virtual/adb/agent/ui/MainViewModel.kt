@@ -8,7 +8,10 @@ import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.AndroidViewModel
+import com.virtual.adb.agent.ResolutionMode
+import com.virtual.adb.agent.RotationMode
 import com.virtual.adb.agent.ScreenCaptureService
+import com.virtual.adb.agent.ServerConfig
 import com.virtual.adb.agent.TcpBridgeServer
 import com.virtual.adb.agent.VirtualAdbApp
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,7 +66,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** TCP 启动错误 */
     val tcpStartError: StateFlow<String> = tcpServer.startError
 
-    /** MediaProjection 授权结果待处理 */
+    // ─── ServerConfig 状态（供 UI 直接读取） ────────────────
+
+    val resolutionMode: StateFlow<ResolutionMode> = ServerConfig.resolutionMode
+    val rotationMode: StateFlow<RotationMode> = ServerConfig.rotationMode
+    val customWidth: StateFlow<Int> = ServerConfig.customWidth
+    val customHeight: StateFlow<Int> = ServerConfig.customHeight
+
+    // ─── MediaProjection 授权结果待处理 ──────────────────────
     private var pendingProjectionResultCode = 0
     private var pendingProjectionData: Intent? = null
 
@@ -228,5 +238,29 @@ s.close()
      */
     fun clearTcpLogs() {
         tcpServer.clearLogs()
+    }
+
+    // ─── ServerConfig 修改方法 ───────────────────────────────
+
+    /**
+     * 设置分辨率返回模式
+     */
+    fun setResolutionMode(mode: ResolutionMode) {
+        ServerConfig.resolutionMode.value = mode
+    }
+
+    /**
+     * 设置截图旋转矫正模式
+     */
+    fun setRotationMode(mode: RotationMode) {
+        ServerConfig.rotationMode.value = mode
+    }
+
+    /**
+     * 设置自定义分辨率
+     */
+    fun setCustomResolution(width: Int, height: Int) {
+        ServerConfig.customWidth.value = width
+        ServerConfig.customHeight.value = height
     }
 }

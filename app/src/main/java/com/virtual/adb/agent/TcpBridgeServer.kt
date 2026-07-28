@@ -495,21 +495,25 @@ class TcpBridgeServer(
                 var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
                     ?: return@runBlocking jpegData
 
-                // 获取系统当前屏幕旋转角度
-                val displayManager = service.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager
-                val display = displayManager?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
-                val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
-
-                // 根据系统旋转状态确定需要矫正的角度
-                val degreeNeeded = when (rotation) {
-                    android.view.Surface.ROTATION_90 -> 90f
-                    android.view.Surface.ROTATION_270 -> 270f
-                    android.view.Surface.ROTATION_180 -> 180f
-                    else -> 0f
+                // 根据 UI 设置的旋转模式动态计算旋转角度
+                val degreeNeeded = when (ServerConfig.rotationMode.value) {
+                    RotationMode.AUTO_SENSOR -> {
+                        val displayManager = service.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager
+                        val display = displayManager?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+                        val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
+                        when (rotation) {
+                            android.view.Surface.ROTATION_90 -> 90f
+                            android.view.Surface.ROTATION_270 -> 270f
+                            android.view.Surface.ROTATION_180 -> 180f
+                            else -> 0f
+                        }
+                    }
+                    RotationMode.NONE -> 0f
+                    RotationMode.ROTATE_90 -> 90f
+                    RotationMode.ROTATE_270 -> 270f
                 }
 
-                // 仅当系统处于横屏但 Bitmap 仍是竖屏时才旋转
-                if (degreeNeeded != 0f && bitmap.width < bitmap.height) {
+                if (degreeNeeded != 0f) {
                     val matrix = android.graphics.Matrix()
                     matrix.postRotate(degreeNeeded)
                     bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
@@ -526,14 +530,21 @@ class TcpBridgeServer(
 
     private fun handleWmSize(cmd: String): ByteArray {
         val metrics = android.content.res.Resources.getSystem().displayMetrics
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
+        val rawW = metrics.widthPixels
+        val rawH = metrics.heightPixels
 
-        // 如果命令包含管道符或 grep，按行返回纯数字
+        // 根据 UI 选中的模式动态计算分辨率
+        val (finalW, finalH) = when (ServerConfig.resolutionMode.value) {
+            ResolutionMode.REAL_SYSTEM -> Pair(rawW, rawH)
+            ResolutionMode.FORCE_LANDSCAPE -> Pair(kotlin.math.max(rawW, rawH), kotlin.math.min(rawW, rawH))
+            ResolutionMode.FORCE_PORTRAIT -> Pair(kotlin.math.min(rawW, rawH), kotlin.math.max(rawW, rawH))
+            ResolutionMode.CUSTOM -> Pair(ServerConfig.customWidth.value, ServerConfig.customHeight.value)
+        }
+
         return if (cmd.contains("grep") || cmd.contains("tail")) {
-            "$width\n$height\n".toByteArray(Charsets.UTF_8)
+            "$finalW\n$finalH\n".toByteArray(Charsets.UTF_8)
         } else {
-            "Physical size: ${width}x${height}\n".toByteArray(Charsets.UTF_8)
+            "Physical size: ${finalW}x${finalH}\n".toByteArray(Charsets.UTF_8)
         }
     }
 
