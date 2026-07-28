@@ -193,6 +193,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _logMessage.value = "屏幕捕捉已停止"
     }
 
+    /**
+     * 由 Activity 调用，同步 ScreenCaptureService.isActive 状态到前端
+     */
+    fun updateCaptureRunning(active: Boolean) {
+        _captureRunning.value = active
+    }
+
     // ─── TCP 服务 ──────────────────────────────────────────
 
     /**

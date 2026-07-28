@@ -12,8 +12,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.dynamicLightColorScheme
+import androidx.lifecycle.lifecycleScope
 import com.virtual.adb.agent.ui.MainScreen
 import com.virtual.adb.agent.ui.MainViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /**
  * 主 Activity
@@ -32,6 +35,7 @@ class MainActivity : ComponentActivity() {
     /** 屏幕捕捉服务绑定 */
     private var captureService: ScreenCaptureService? = null
     private var captureBound = false
+    private var captureStateJob: Job? = null
 
     private val captureConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -40,13 +44,24 @@ class MainActivity : ComponentActivity() {
             captureBound = true
             VirtualAdbApp.tcpServer.screenCaptureService = captureService
             AppLogger.i(TAG, "屏幕捕捉服务已绑定")
+
+            // 实时追踪捕捉状态，崩溃时自动更新前端
+            captureStateJob?.cancel()
+            captureStateJob = lifecycleScope.launch {
+                captureService?.isActive?.collect { active ->
+                    viewModel.updateCaptureRunning(active)
+                }
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
+            captureStateJob?.cancel()
+            captureStateJob = null
             captureService = null
             captureBound = false
             VirtualAdbApp.tcpServer.screenCaptureService = null
             AppLogger.w(TAG, "屏幕捕捉服务已断开")
+            viewModel.updateCaptureRunning(false)
         }
     }
 
