@@ -1,6 +1,5 @@
 package com.virtual.adb.agent
 
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -516,31 +515,32 @@ class TcpBridgeServer(
                 var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
                     ?: return@runBlocking jpegData
 
-                // 根据 UI 设置的旋转模式动态计算旋转角度
-                val degreeNeeded = when (ServerConfig.rotationMode.value) {
-                    RotationMode.AUTO_SENSOR -> {
-                        val displayManager = service.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager
-                        val display = displayManager?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
-                        val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
-                        when (rotation) {
-                            android.view.Surface.ROTATION_90 -> 90f
-                            android.view.Surface.ROTATION_270 -> 270f
-                            android.view.Surface.ROTATION_180 -> 180f
-                            else -> 0f
-                        }
+                // 第一步：确保图片是横屏 (width > height)
+                // MediaProjection 在某些设备上导出的 Buffer 是竖向排列的，必须先旋转为横屏
+                if (bitmap.width < bitmap.height) {
+                    val matrix = android.graphics.Matrix()
+                    matrix.postRotate(270f)
+                    bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                    if (ServerConfig.enableVerboseLog.value) {
+                        Log.i(TAG, "竖屏转横屏: 旋转 270°")
                     }
+                }
+
+                // 第二步：根据 UI 设置的旋转模式进行额外旋转（如果需要）
+                val extraRotation = when (ServerConfig.rotationMode.value) {
+                    RotationMode.AUTO_SENSOR -> 0f // 已经在第一步处理了
                     RotationMode.NONE -> 0f
                     RotationMode.ROTATE_90 -> 90f
                     RotationMode.ROTATE_270 -> 270f
                 }
 
-                if (degreeNeeded != 0f) {
+                if (extraRotation != 0f) {
                     val matrix = android.graphics.Matrix()
-                    matrix.postRotate(degreeNeeded)
+                    matrix.postRotate(extraRotation)
                     bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
                 }
 
-                // 智能缩放：根据 UI 配置决定是否缩放
+                // 第三步：智能缩放（此时图片已经是横屏，缩放后保持 16:9 比例）
                 if (ServerConfig.enableSmartScale.value) {
                     val targetWidth = ServerConfig.smartScaleTargetWidth.value
                     if (bitmap.width > targetWidth) {
@@ -551,7 +551,7 @@ class TcpBridgeServer(
                 }
 
                 if (ServerConfig.enableVerboseLog.value) {
-                    Log.i(TAG, "截图尺寸: ${bitmap.width} x ${bitmap.height}")
+                    Log.i(TAG, "最终截图尺寸: ${bitmap.width} x ${bitmap.height}")
                 }
 
                 // 调试存图：根据 UI 配置决定是否保存
