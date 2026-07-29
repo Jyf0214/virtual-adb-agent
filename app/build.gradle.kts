@@ -40,9 +40,9 @@ android {
     lint {
         abortOnError = true
         // AGP 8.7.3 与 Kotlin 2.1.0 的兼容性问题：
-        // NonNullableMutableLiveDataDetector 引用了已被改为类的 KaCallableMemberCall 接口
-        // 这是 Lint 内部 BUG，不影响代码质量
-        disable += "NullSafeMutableLiveData"
+        // 多个 Lint 检测器引用了 Kotlin 分析 API 中已被改为类的接口，
+        // 导致 IncompatibleClassChangeError 崩溃。不影响代码质量。
+        disable += listOf("NullSafeMutableLiveData", "FlowOperatorInvokedInComposition", "RememberComposition")
     }
 }
 
