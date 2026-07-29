@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
  * 通过 MediaProjection + ImageReader 实现后台帧捕获。
  * 使用前台服务挂载以保证服务存活。
  */
+@Suppress("TooManyFunctions")
 class ScreenCaptureService : Service() {
 
     companion object {

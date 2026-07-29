@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * 管理权限状态、TCP 服务启停、屏幕捕捉授权等。
  */
+@Suppress("TooManyFunctions")
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {

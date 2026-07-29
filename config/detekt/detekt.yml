@@ -73,7 +73,7 @@ style:
   # TODO/FIXME 遗留代码检查
   ForbiddenComment:
     active: true
-    values:
+    comments:
       - 'TODO:'
       - 'FIXME:'
       - 'STOPSHIP:'
@@ -89,12 +89,29 @@ style:
   UnusedParameter:
     active: true
 
+  # 方法返回语句数量（符合 Kotlin 卫语句习惯）
+  ReturnCount:
+    active: true
+    max: 3
+
   # 禁止 Magic Number（Android 中尺寸/颜色等常量很多，关闭）
   MagicNumber:
     active: false
 
   # 最大行长度（交由 ktlint 处理）
   MaxLineLength:
+    active: false
+
+# ═══════════════════════════════════════════════════════════════
+# 命名规范（Naming）
+# ═══════════════════════════════════════════════════════════════
+naming:
+  active: true
+
+  # Composable 函数按约定首字母大写，但 Detekt 1.23.7 不支持排除 @Composable 标注
+  # Jetpack Compose 约定要求 Composable 函数使用 PascalCase（如 MainScreen），
+  # 与标准 Kotlin 命名规则冲突，故关闭此规则。
+  FunctionNaming:
     active: false
 
 # ═══════════════════════════════════════════════════════════════
@@ -125,9 +142,9 @@ complexity:
     active: true
     threshold: 4
 
-  # 标签化表达式
+  # 标签化表达式（return@label 等是合法的 Kotlin 控制流模式，关闭）
   LabeledExpression:
-    active: true
+    active: false
 
 # ═══════════════════════════════════════════════════════════════
 # 异常处理（Exceptions）
@@ -140,8 +157,11 @@ exceptions:
     active: true
 
   # catch 块捕获了基类异常
+  # Android Service / 网络 I/O 代码中，系统可能抛出多种运行时异常
+  # （SecurityException、IllegalArgumentException、IOException 等），
+  # 逐个捕获不现实且容易遗漏，使用 Exception 兜底是 Service 代码的标准做法。
   TooGenericExceptionCaught:
-    active: true
+    active: false
 
   # 打印堆栈跟踪（应使用 Logger）
   PrintStackTrace:

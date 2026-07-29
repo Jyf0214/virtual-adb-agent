@@ -45,11 +45,11 @@ object DebugScreenshotManager {
             val timeStr = dateFormat.format(Date(timestamp))
 
             // 检测图片格式：JPEG 文件头 FF D8 FF，否则按 PNG 处理
-            val ext = if (imageData.size >= 3 &&
+            val isJpegHeader = imageData.size >= 3 &&
                 imageData[0] == 0xFF.toByte() &&
                 imageData[1] == 0xD8.toByte() &&
                 imageData[2] == 0xFF.toByte()
-            ) {
+            val ext = if (isJpegHeader) {
                 "jpg"
             } else {
                 "png"
@@ -72,13 +72,15 @@ object DebugScreenshotManager {
                 val removed = current.removeAt(0)
                 try {
                     File(removed.filePath).delete()
-                } catch (_: Exception) {
+                } catch (e: SecurityException) {
+                    AppLogger.w("DebugScreenshotManager", "删除旧截图失败: ${e.message}")
                 }
             }
 
             _screenshots.value = current
             file.absolutePath
         } catch (e: Exception) {
+            AppLogger.e("DebugScreenshotManager", "保存截图失败", e)
             null
         }
     }
@@ -94,7 +96,8 @@ object DebugScreenshotManager {
             files.forEach { info ->
                 try {
                     File(info.filePath).delete()
-                } catch (_: Exception) {
+                } catch (e: SecurityException) {
+                    AppLogger.w("DebugScreenshotManager", "清理旧截图失败: ${e.message}")
                 }
             }
         }

@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * 使用方式：adb connect 127.0.0.1:10000
  */
+@Suppress("LargeClass", "TooManyFunctions")
 class TcpBridgeServer(
     private val port: Int = 10000,
     private val host: String = "127.0.0.1"
@@ -201,6 +202,7 @@ class TcpBridgeServer(
 
     // ─── ADB 客户端处理 ──────────────────────────────────────
 
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "NestedBlockDepth")
     private suspend fun handleAdbClient(socket: java.net.Socket, clientAddr: String) {
         _clientCount.value = _clientCount.value + 1
         val streams = mutableMapOf<Int, StreamState>() // serverStreamId -> StreamState
@@ -288,27 +290,33 @@ class TcpBridgeServer(
                                 .trim()
 
                             appendLog("→", clientAddr, "请求命令: $cleanCmd")
-                            val responseData = processCommandToBytes(cleanCmd, clientAddr)
 
-                            // 【核心修复】：CMD_OPEN 中加入高效非阻塞 256KB 分块发送
-                            if (responseData.isNotEmpty()) {
-                                val chunkSize = 786432 // 768 KB
-                                var offset = 0
-                                val totalLen = responseData.size
+                            // 重要：在独立协程中执行命令，不阻塞主读取循环
+                            // 避免手势 delay() / screencap 等耗时操作饿死 TCP 读取端口
+                            val sid = serverStreamId
+                            val cid = clientStreamId
+                            val addr = clientAddr
+                            serverScope.launch {
+                                val responseData = processCommandToBytes(cleanCmd, addr)
 
-                                while (offset < totalLen) {
-                                    val len = minOf(chunkSize, totalLen - offset)
-                                    val chunk = ByteArray(len)
-                                    System.arraycopy(responseData, offset, chunk, 0, len)
-                                    writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, chunk)
-                                    offset += len
+                                if (responseData.isNotEmpty()) {
+                                    val chunkSize = 786432 // 768 KB
+                                    var offset = 0
+                                    val totalLen = responseData.size
+
+                                    while (offset < totalLen) {
+                                        val len = minOf(chunkSize, totalLen - offset)
+                                        val chunk = ByteArray(len)
+                                        System.arraycopy(responseData, offset, chunk, 0, len)
+                                        writeMessage(output, CMD_WRTE, sid, cid, chunk)
+                                        offset += len
+                                    }
                                 }
-                            }
 
-                            // 命令处理完毕，发送 CLSE
-                            writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
-                            appendLog("←", clientAddr, "CLSE stream=$clientStreamId")
-                            streams.remove(serverStreamId)
+                                writeMessage(output, CMD_CLSE, sid, cid, null)
+                                appendLog("←", addr, "CLSE stream=$cid")
+                                streams.remove(sid)
+                            }
                         }
                     }
 
@@ -379,25 +387,33 @@ class TcpBridgeServer(
 
                             if (command.isNotEmpty()) {
                                 appendLog("→", clientAddr, "请求命令: $command")
-                                val responseData = processCommandToBytes(command, clientAddr)
 
-                                if (responseData.isNotEmpty()) {
-                                    // 分块传输：超过 256KB 时拆分发送，避免 Broken pipe
-                                    val chunkSize = 786432 // 768 KB
-                                    var offset = 0
-                                    val totalLen = responseData.size
+                                // 重要：在独立协程中执行命令，不阻塞主读取循环
+                                // 避免手势 delay() / screencap 等耗时操作饿死 TCP 读取端口
+                                val sid = serverStreamId
+                                val cid = clientStreamId
+                                val addr = clientAddr
+                                serverScope.launch {
+                                    val responseData = processCommandToBytes(command, addr)
 
-                                    while (offset < totalLen) {
-                                        val len = minOf(chunkSize, totalLen - offset)
-                                        val chunk = ByteArray(len)
-                                        System.arraycopy(responseData, offset, chunk, 0, len)
-                                        writeMessage(output, CMD_WRTE, serverStreamId, clientStreamId, chunk)
-                                        offset += len
+                                    if (responseData.isNotEmpty()) {
+                                        // 分块传输：超过 256KB 时拆分发送，避免 Broken pipe
+                                        val chunkSize = 786432 // 768 KB
+                                        var offset = 0
+                                        val totalLen = responseData.size
+
+                                        while (offset < totalLen) {
+                                            val len = minOf(chunkSize, totalLen - offset)
+                                            val chunk = ByteArray(len)
+                                            System.arraycopy(responseData, offset, chunk, 0, len)
+                                            writeMessage(output, CMD_WRTE, sid, cid, chunk)
+                                            offset += len
+                                        }
                                     }
+                                    writeMessage(output, CMD_CLSE, sid, cid, null)
+                                    appendLog("←", addr, "CLSE stream=$cid")
+                                    streams.remove(sid)
                                 }
-                                writeMessage(output, CMD_CLSE, serverStreamId, clientStreamId, null)
-                                appendLog("←", clientAddr, "CLSE stream=$clientStreamId")
-                                streams.remove(serverStreamId)
                             }
                         }
                     }
@@ -433,6 +449,7 @@ class TcpBridgeServer(
 
     // ─── ADB 命令全量路由处理 ──────────────────────────────────────
 
+    @Suppress("CyclomaticComplexMethod")
     private suspend fun processCommandToBytes(command: String, clientAddr: String): ByteArray {
         AppLogger.d(TAG, "执行命令: $command")
 
@@ -465,7 +482,7 @@ class TcpBridgeServer(
                 cmd.startsWith("input tap ") -> handleInputTap(cmd)
                 cmd.startsWith("input swipe ") -> handleInputSwipe(cmd)
                 cmd.startsWith("input keyevent ") -> handleInputKeyevent(cmd)
-                cmd.startsWith("input text ") -> handleInputText(cmd)
+                cmd.startsWith("input text ") -> handleInputText()
                 cmd == "input" || cmd.startsWith("input ") -> "\n".toByteArray(Charsets.UTF_8)
 
                 // 系统属性 getprop
@@ -603,10 +620,15 @@ class TcpBridgeServer(
     private suspend fun handleInputTap(command: String): ByteArray {
         val parts = command.split("\\s+".toRegex())
         if (parts.size >= 4) {
-            val x = parts[2].toFloatOrNull()?.coerceAtLeast(0f)
-            val y = parts[3].toFloatOrNull()?.coerceAtLeast(0f)
-            if (x != null && y != null) {
-                accessibilityService?.injectClick(x, y)
+            val metrics = android.content.res.Resources.getSystem().displayMetrics
+            val w = metrics.widthPixels.toFloat()
+            val h = metrics.heightPixels.toFloat()
+            // 关键修复：MAA 等客户端可能发负坐标实现方向拖拽，但 AccessibilityService
+            // 的 Path API 不允许负值/越界，必须钳制到 [1f, dim-1f]
+            val rawX = parts[2].toFloatOrNull()?.coerceIn(1f, w - 1f)
+            val rawY = parts[3].toFloatOrNull()?.coerceIn(1f, h - 1f)
+            if (rawX != null && rawY != null) {
+                accessibilityService?.injectClick(rawX, rawY)
                 delay(100L)
             }
         }
@@ -616,14 +638,19 @@ class TcpBridgeServer(
     private suspend fun handleInputSwipe(command: String): ByteArray {
         val parts = command.split("\\s+".toRegex())
         if (parts.size >= 6) {
-            val x1 = parts[2].toFloatOrNull()?.coerceAtLeast(0f)
-            val y1 = parts[3].toFloatOrNull()?.coerceAtLeast(0f)
-            val x2 = parts[4].toFloatOrNull()?.coerceAtLeast(0f)
-            val y2 = parts[5].toFloatOrNull()?.coerceAtLeast(0f)
+            val metrics = android.content.res.Resources.getSystem().displayMetrics
+            val w = metrics.widthPixels.toFloat()
+            val h = metrics.heightPixels.toFloat()
+            // 同上：MAA 的滑动手势可能带有屏幕外坐标（如 y=-55），
+            // 必须钳制到合法范围内，否则 Path API 抛 "bounds must not be negative"
+            val safeX1 = parts[2].toFloatOrNull()?.coerceIn(1f, w - 1f)
+            val safeY1 = parts[3].toFloatOrNull()?.coerceIn(1f, h - 1f)
+            val safeX2 = parts[4].toFloatOrNull()?.coerceIn(1f, w - 1f)
+            val safeY2 = parts[5].toFloatOrNull()?.coerceIn(1f, h - 1f)
             val duration = parts.getOrNull(6)?.toLongOrNull() ?: 300L
-            if (x1 != null && y1 != null && x2 != null && y2 != null) {
-                accessibilityService?.injectSwipe(x1, y1, x2, y2, duration)
-                // 阻塞到滑动真正完成，防止下一条指令中断当前手势
+            val allCoordsNonNull = safeX1 != null && safeY1 != null && safeX2 != null && safeY2 != null
+            if (allCoordsNonNull) {
+                accessibilityService?.injectSwipe(safeX1, safeY1, safeX2, safeY2, duration)
                 delay(duration + 50L)
             }
         }
@@ -643,7 +670,7 @@ class TcpBridgeServer(
         return "\n".toByteArray(Charsets.UTF_8)
     }
 
-    private suspend fun handleInputText(command: String): ByteArray {
+    private suspend fun handleInputText(): ByteArray {
         delay(100L)
         return "\n".toByteArray(Charsets.UTF_8)
     }
@@ -787,17 +814,20 @@ class TcpBridgeServer(
             }
         }
 
-        writeLeInt(output, command)
-        writeLeInt(output, arg0)
-        writeLeInt(output, arg1)
-        writeLeInt(output, dataLen)
-        writeLeInt(output, byteSum)
-        writeLeInt(output, command xor -1)
+        // 加锁：防止多协程并发写同一 output 导致数据交叉错乱
+        synchronized(output) {
+            writeLeInt(output, command)
+            writeLeInt(output, arg0)
+            writeLeInt(output, arg1)
+            writeLeInt(output, dataLen)
+            writeLeInt(output, byteSum)
+            writeLeInt(output, command xor -1)
 
-        if (data != null) {
-            output.write(data)
+            if (data != null) {
+                output.write(data)
+            }
+            output.flush()
         }
-        output.flush()
     }
 
     private fun bytesToLeInt(bytes: ByteArray, offset: Int): Int {

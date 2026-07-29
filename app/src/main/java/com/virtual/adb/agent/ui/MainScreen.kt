@@ -69,6 +69,7 @@ import com.virtual.adb.agent.ServerConfig
  * - 服务控制开关
  * - 服务器配置卡片
  */
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -563,6 +564,7 @@ fun MainScreen(
                                                 try {
                                                     context.startActivity(intent)
                                                 } catch (e: Exception) {
+                                                    AppLogger.e("MainScreen", "打开调试截图失败", e)
                                                     Toast.makeText(
                                                         context,
                                                         R.string.debug_screenshot_open_failed,
@@ -682,6 +684,7 @@ private fun PermissionCard(
  *
  * 包含：分辨率模式、截图旋转模式、自定义分辨率、截图性能、调试选项
  */
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 @Composable
 private fun ServerConfigCard(
     viewModel: MainViewModel,

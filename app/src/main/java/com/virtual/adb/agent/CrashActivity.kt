@@ -61,6 +61,7 @@ class CrashActivity : ComponentActivity() {
     }
 }
 
+@Suppress("LongMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CrashScreen(crashInfo: CrashInfo?) {

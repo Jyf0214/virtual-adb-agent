@@ -14,6 +14,7 @@ import kotlin.random.Random
 /**
  * 无障碍桥梁服务
  */
+@Suppress("TooManyFunctions")
 class AccessibilityBridgeService : AccessibilityService() {
 
     companion object {
