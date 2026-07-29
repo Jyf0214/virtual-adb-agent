@@ -149,6 +149,24 @@ class ScreenCaptureService : Service() {
     }
 
     /**
+     * 获取最新一帧的原生 Bitmap（跳过 JPEG 编解码，性能最优）
+     *
+     * @return Bitmap，失败时返回 null
+     */
+    fun getLatestFrameBitmap(): Bitmap? {
+        if (!_isActive.value) return null
+        return try {
+            val image: Image = imageReader?.acquireLatestImage() ?: return null
+            val bitmap = imageToBitmap(image)
+            image.close()
+            bitmap
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "获取 Bitmap 帧失败", e)
+            null
+        }
+    }
+
+    /**
      * 启动捕捉
      */
     fun startCapture(resultCode: Int, resultData: Intent) {

@@ -2,7 +2,6 @@ package com.virtual.adb.agent
 
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.provider.Settings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -507,75 +506,54 @@ class TcpBridgeServer(
         return runBlocking {
             val startTime = if (ServerConfig.enableVerboseLog.value) System.currentTimeMillis() else 0
 
-            val jpegData = service.getLatestFrameJpeg(ServerConfig.jpegQuality.value)
-            if (jpegData != null) {
-                // 调试存图：立即保存原始 JPEG 数据（无论后续处理是否成功）
-                if (ServerConfig.enableDebugSave.value) {
-                    val debugDir = service.getExternalFilesDir(null) ?: service.filesDir
-                    val savedPath = DebugScreenshotManager.saveScreenshot(debugDir, jpegData)
-                    if (savedPath != null) {
-                        if (ServerConfig.enableVerboseLog.value) {
-                            appendLog("ℹ", clientAddr, "原始 JPEG 已保存: $savedPath")
-                        }
-                    }
-                }
-
-                var bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
-                if (bitmap == null) {
-                    appendLog("✗", clientAddr, "解码失败: JPEG 数据损坏无法解析 (${jpegData.size} bytes)")
-                    return@runBlocking "screencap: failed to decode internal image buffer\n".toByteArray(Charsets.UTF_8)
-                }
-
-                // 第一步：针对竖向 Buffer (如 1080x1920) 转换为标准横屏 (1920x1080)
-                if (bitmap.width < bitmap.height) {
-                    val matrix = android.graphics.Matrix()
-                    matrix.postRotate(270f)
-                    bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-                    if (ServerConfig.enableVerboseLog.value) {
-                        appendLog("ℹ", clientAddr, "竖屏转横屏: 旋转 270°")
-                    }
-                }
-
-                // 第二步：智能缩放
-                if (ServerConfig.enableSmartScale.value) {
-                    val targetWidth = ServerConfig.smartScaleTargetWidth.value
-                    if (bitmap.width > targetWidth) {
-                        val scale = targetWidth.toFloat() / bitmap.width
-                        val targetHeight = (bitmap.height * scale).toInt()
-                        bitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
-                    }
-                }
-
-                if (ServerConfig.enableVerboseLog.value) {
-                    appendLog("ℹ", clientAddr, "最终截图尺寸: ${bitmap.width} x ${bitmap.height}")
-                }
-
-                val baos = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
-                val result = baos.toByteArray()
-
-                // 调试存图（保留 10 张，带时间戳命名）
-                if (ServerConfig.enableDebugSave.value) {
-                    val debugDir = service.getExternalFilesDir(null) ?: service.filesDir
-                    val savedPath = DebugScreenshotManager.saveScreenshot(debugDir, result)
-                    if (savedPath != null) {
-                        if (ServerConfig.enableVerboseLog.value) {
-                            appendLog("ℹ", clientAddr, "处理后 PNG 已保存: $savedPath")
-                        }
-                    } else {
-                        appendLog("✗", clientAddr, "保存处理后 PNG 失败")
-                    }
-                }
-
-                if (ServerConfig.enableVerboseLog.value) {
-                    val elapsed = System.currentTimeMillis() - startTime
-                    appendLog("ℹ", clientAddr, "截图完成: ${result.size} bytes, 耗时 ${elapsed}ms")
-                }
-
-                result
-            } else {
-                "screencap: failed to capture frame\n".toByteArray(Charsets.UTF_8)
+            // 直出 Bitmap，跳过 JPEG 中转编解码
+            var bitmap = service.getLatestFrameBitmap()
+            if (bitmap == null) {
+                return@runBlocking "screencap: failed to capture frame\n".toByteArray(Charsets.UTF_8)
             }
+
+            // 竖屏 Buffer (如 1080x1920) 旋转 270° 转为标准横屏 (1920x1080)
+            if (bitmap.width < bitmap.height) {
+                val matrix = android.graphics.Matrix()
+                matrix.postRotate(270f)
+                bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                if (ServerConfig.enableVerboseLog.value) {
+                    appendLog("ℹ", clientAddr, "竖屏转横屏: 旋转 270°")
+                }
+            }
+
+            // 智能缩放
+            if (ServerConfig.enableSmartScale.value) {
+                val targetWidth = ServerConfig.smartScaleTargetWidth.value
+                if (bitmap.width > targetWidth) {
+                    val scale = targetWidth.toFloat() / bitmap.width
+                    val targetHeight = (bitmap.height * scale).toInt()
+                    bitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+                }
+            }
+
+            if (ServerConfig.enableVerboseLog.value) {
+                appendLog("ℹ", clientAddr, "最终截图尺寸: ${bitmap.width} x ${bitmap.height}")
+            }
+
+            val baos = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
+            val result = baos.toByteArray()
+
+            // 调试存图：异步 IO，不阻塞网络响应
+            if (ServerConfig.enableDebugSave.value) {
+                val debugDir = service.getExternalFilesDir(null) ?: service.filesDir
+                serverScope.launch {
+                    DebugScreenshotManager.saveScreenshot(debugDir, result)
+                }
+            }
+
+            if (ServerConfig.enableVerboseLog.value) {
+                val elapsed = System.currentTimeMillis() - startTime
+                appendLog("ℹ", clientAddr, "截图完成: ${result.size} bytes, 耗时 ${elapsed}ms")
+            }
+
+            result
         }
     }
 
@@ -613,8 +591,8 @@ class TcpBridgeServer(
     private suspend fun handleInputTap(command: String): ByteArray {
         val parts = command.split("\\s+".toRegex())
         if (parts.size >= 4) {
-            val x = parts[2].toFloatOrNull()
-            val y = parts[3].toFloatOrNull()
+            val x = parts[2].toFloatOrNull()?.coerceAtLeast(0f)
+            val y = parts[3].toFloatOrNull()?.coerceAtLeast(0f)
             if (x != null && y != null) {
                 accessibilityService?.injectClick(x, y)
                 delay(100L)
@@ -626,10 +604,10 @@ class TcpBridgeServer(
     private suspend fun handleInputSwipe(command: String): ByteArray {
         val parts = command.split("\\s+".toRegex())
         if (parts.size >= 6) {
-            val x1 = parts[2].toFloatOrNull()
-            val y1 = parts[3].toFloatOrNull()
-            val x2 = parts[4].toFloatOrNull()
-            val y2 = parts[5].toFloatOrNull()
+            val x1 = parts[2].toFloatOrNull()?.coerceAtLeast(0f)
+            val y1 = parts[3].toFloatOrNull()?.coerceAtLeast(0f)
+            val x2 = parts[4].toFloatOrNull()?.coerceAtLeast(0f)
+            val y2 = parts[5].toFloatOrNull()?.coerceAtLeast(0f)
             val duration = parts.getOrNull(6)?.toLongOrNull() ?: 300L
             if (x1 != null && y1 != null && x2 != null && y2 != null) {
                 accessibilityService?.injectSwipe(x1, y1, x2, y2, duration)
