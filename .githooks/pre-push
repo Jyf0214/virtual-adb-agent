@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 #
-# pre-push hook — 推送前完整语法检查
+# pre-push hook — 推送前完整语法 + 静态分析检查
 #
 # 检查内容：
 #   1. Kotlin 语法（ktlint：未使用导入 + 风格 + 解析错误）
-#   2. XML 格式（xmllint 完整验证）
-#   3. Gradle 配置文件格式
-#   4. AndroidManifest 结构
+#   2. Detekt 死代码 / 不可达代码 / 复杂度分析
+#   3. Android Lint 全局资源与符号检查
+#   4. XML 格式（xmllint 完整验证）
+#   5. Gradle 配置文件格式
+#   6. AndroidManifest 结构
 #
 set -euo pipefail
 
@@ -69,7 +71,39 @@ else
     echo -e "  ${GREEN}✓ 无 Kotlin 文件变更${NC}"
 fi
 
-# ─── 2. XML 格式检查（xmllint）───────────────────────────────
+# ─── 2. Detekt 静态分析（死代码 / 不可达代码 / 复杂度）─────
+
+echo -e "${YELLOW}▸ 运行 Detekt 静态分析（死代码检测）...${NC}"
+
+if command -v gradle &>/dev/null; then
+    if gradle detekt --quiet 2>/dev/null; then
+        echo -e "  ${GREEN}✓ Detekt 静态分析通过${NC}"
+    else
+        echo -e "  ${RED}✗ Detekt 发现代码问题，请运行 'gradle detekt' 查看详情${NC}"
+        echo -e "  ${YELLOW}  报告位置: build/reports/detekt/$(ls -t build/reports/detekt/ 2>/dev/null | head -1)${NC}"
+        errors=$((errors + 1))
+    fi
+else
+    echo -e "  ${YELLOW}⚠ 未找到 gradle，跳过 Detekt 分析${NC}"
+fi
+
+# ─── 3. Android Lint 检查 ───────────────────────────────────
+
+echo -e "${YELLOW}▸ 运行 Android Lint...${NC}"
+
+if command -v gradle &>/dev/null; then
+    if gradle lint --quiet 2>/dev/null; then
+        echo -e "  ${GREEN}✓ Android Lint 通过${NC}"
+    else
+        echo -e "  ${RED}✗ Android Lint 发现问题，请运行 'gradle lint' 查看详情${NC}"
+        echo -e "  ${YELLOW}  报告位置: app/build/reports/lint-results.html${NC}"
+        errors=$((errors + 1))
+    fi
+else
+    echo -e "  ${YELLOW}⚠ 未找到 gradle，跳过 Android Lint${NC}"
+fi
+
+# ─── 4. XML 格式检查（xmllint）──────────────────────────────
 
 echo -e "${YELLOW}▸ 检查 XML 格式...${NC}"
 
@@ -96,7 +130,7 @@ else
     echo -e "  ${GREEN}✓ 无 XML 文件变更${NC}"
 fi
 
-# ─── 3. Gradle 配置检查 ─────────────────────────────────────
+# ─── 5. Gradle 配置检查 ─────────────────────────────────────
 
 echo -e "${YELLOW}▸ 检查 Gradle 配置...${NC}"
 
@@ -127,7 +161,7 @@ else
     echo -e "  ${GREEN}✓ 无 Gradle 配置变更${NC}"
 fi
 
-# ─── 4. AndroidManifest 检查 ────────────────────────────────
+# ─── 6. AndroidManifest 检查 ────────────────────────────────
 
 echo -e "${YELLOW}▸ 检查 AndroidManifest...${NC}"
 
@@ -156,11 +190,11 @@ fi
 
 echo ""
 if [ "$errors" -gt 0 ]; then
-    echo -e "${RED}═══ 推送被阻止: 发现 $errors 个语法问题 ═══${NC}"
+    echo -e "${RED}═══ 推送被阻止: 发现 $errors 个问题 ═══${NC}"
     echo -e "${YELLOW}修复后重新推送${NC}"
     exit 1
 else
-    echo -e "${GREEN}═══ 所有语法检查通过 ✓ ═══${NC}"
+    echo -e "${GREEN}═══ 所有检查通过 ✓ ═══${NC}"
     echo -e "${GREEN}允许推送${NC}"
     exit 0
 fi

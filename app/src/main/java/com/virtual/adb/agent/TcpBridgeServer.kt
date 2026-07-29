@@ -205,6 +205,18 @@ class TcpBridgeServer(
         _clientCount.value = _clientCount.value + 1
         val streams = mutableMapOf<Int, StreamState>() // serverStreamId -> StreamState
 
+        // ─── 来源 IP 安全检查 ──────────────────────────────
+        // 仅允许本地环回（127.0.0.1）和局域网私有地址（10.x.x.x / 172.16-31.x.x / 192.168.x.x）
+        // 拒绝所有外部公网 IP 连接，防止内网穿透/端口映射导致的未授权访问
+        val remoteAddr = socket.inetAddress
+        if (!remoteAddr.isLoopbackAddress && !remoteAddr.isSiteLocalAddress) {
+            val rejectMsg = "拒绝外部公网 IP 连接: ${remoteAddr.hostAddress}"
+            AppLogger.w(TAG, rejectMsg)
+            appendLog("✗", clientAddr, rejectMsg)
+            socket.close()
+            return
+        }
+
         try {
             socket.soTimeout = READ_TIMEOUT_MS
             val input = DataInputStream(socket.getInputStream())

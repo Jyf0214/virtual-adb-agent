@@ -1,0 +1,166 @@
+# Detekt 静态分析配置
+# 版本: 1.23.7
+# 作用：检测死代码、不可达逻辑、代码异味、复杂度超标
+# 规则参考: https://detekt.dev/docs/rules/
+
+build:
+  maxIssues: 100
+
+processors:
+  active: true
+
+console-reports:
+  active: true
+
+output-reports:
+  active: true
+
+# ═══════════════════════════════════════════════════════════════
+# 潜在 Bug（Potential Bugs）
+# ═══════════════════════════════════════════════════════════════
+potential-bugs:
+  active: true
+
+  UnreachableCode:
+    active: true
+
+  UnconditionalJumpStatementInLoop:
+    active: true
+
+  MapGetWithNotNullAssertionOperator:
+    active: true
+
+  UnnecessaryNotNullCheck:
+    active: true
+
+  UnnecessaryNotNullOperator:
+    active: true
+
+  DoubleMutabilityForCollection:
+    active: true
+
+# ═══════════════════════════════════════════════════════════════
+# 代码风格（Style）—— 死代码 + 冗余代码
+# ═══════════════════════════════════════════════════════════════
+style:
+  active: true
+
+  # 未使用的私有成员（函数、属性）—— 核心死代码检测
+  UnusedPrivateMember:
+    active: true
+    allowedNames: ""
+
+  # 未使用的私有类 —— 核心死代码检测
+  UnusedPrivateClass:
+    active: true
+
+  # 未使用的导入 —— 核心死代码检测
+  UnusedImports:
+    active: true
+
+  # 冗余的显式类型声明
+  RedundantExplicitType:
+    active: true
+
+  # 不必要的 let
+  UnnecessaryLet:
+    active: true
+
+  # 不必要的 apply
+  UnnecessaryApply:
+    active: true
+
+  # TODO/FIXME 遗留代码检查
+  ForbiddenComment:
+    active: true
+    values:
+      - 'TODO:'
+      - 'FIXME:'
+      - 'STOPSHIP:'
+      - 'HACK:'
+
+  # 禁止通配符 import（java.util.* 除外）
+  WildcardImport:
+    active: true
+    excludeImports:
+      - 'java.util.*'
+
+  # 未使用的参数
+  UnusedParameter:
+    active: true
+
+  # 禁止 Magic Number（Android 中尺寸/颜色等常量很多，关闭）
+  MagicNumber:
+    active: false
+
+  # 最大行长度（交由 ktlint 处理）
+  MaxLineLength:
+    active: false
+
+# ═══════════════════════════════════════════════════════════════
+# 代码复杂度（Complexity）
+# ═══════════════════════════════════════════════════════════════
+complexity:
+  active: true
+
+  # 圈复杂度超过阈值（建议重构）
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 15
+    ignoreSingleWhenExpression: true
+
+  # 方法体超过行数（建议拆分）
+  LongMethod:
+    active: true
+    threshold: 80
+
+  # 参数列表超过数量
+  LongParameterList:
+    active: true
+    functionThreshold: 8
+    constructorThreshold: 10
+
+  # 复杂条件
+  ComplexCondition:
+    active: true
+    threshold: 4
+
+  # 标签化表达式
+  LabeledExpression:
+    active: true
+
+# ═══════════════════════════════════════════════════════════════
+# 异常处理（Exceptions）
+# ═══════════════════════════════════════════════════════════════
+exceptions:
+  active: true
+
+  # 抛出了基类异常（Exception / Throwable）
+  TooGenericExceptionThrown:
+    active: true
+
+  # catch 块捕获了基类异常
+  TooGenericExceptionCaught:
+    active: true
+
+  # 打印堆栈跟踪（应使用 Logger）
+  PrintStackTrace:
+    active: true
+
+  # 从 finally 块中返回
+  ReturnFromFinally:
+    active: true
+
+# ═══════════════════════════════════════════════════════════════
+# 性能（Performance）
+# ═══════════════════════════════════════════════════════════════
+performance:
+  active: true
+
+  # 不必要的临时对象创建
+  UnnecessaryTemporaryInstantiation:
+    active: true
+
+  # 在循环中分配数组
+  ArrayPrimitive:
+    active: true
