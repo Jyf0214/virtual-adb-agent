@@ -79,6 +79,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val jpegQuality: StateFlow<Int> = ServerConfig.jpegQuality
 
     // 调试配置
+    val isDeveloperMode: StateFlow<Boolean> = ServerConfig.isDeveloperMode
     val enableDebugSave: StateFlow<Boolean> = ServerConfig.enableDebugSave
     val enableVerboseLog: StateFlow<Boolean> = ServerConfig.enableVerboseLog
     val enableChunkLog: StateFlow<Boolean> = ServerConfig.enableChunkLog
@@ -260,10 +261,19 @@ s.close()
     // ─── ServerConfig 修改方法 ───────────────────────────────
 
     /**
+     * 切换开发者模式
+     */
+    fun toggleDeveloperMode() {
+        ServerConfig.isDeveloperMode.value = !ServerConfig.isDeveloperMode.value
+        ServerConfig.save()
+    }
+
+    /**
      * 设置分辨率返回模式
      */
     fun setResolutionMode(mode: ResolutionMode) {
         ServerConfig.resolutionMode.value = mode
+        ServerConfig.save()
     }
 
     /**
@@ -271,6 +281,7 @@ s.close()
      */
     fun setRotationMode(mode: RotationMode) {
         ServerConfig.rotationMode.value = mode
+        ServerConfig.save()
     }
 
     /**
@@ -279,6 +290,7 @@ s.close()
     fun setCustomResolution(width: Int, height: Int) {
         ServerConfig.customWidth.value = width
         ServerConfig.customHeight.value = height
+        ServerConfig.save()
     }
 
     // ─── 截图性能配置修改 ──────────────────────────────────
@@ -286,16 +298,19 @@ s.close()
     /** 切换智能缩放 */
     fun toggleSmartScale() {
         ServerConfig.enableSmartScale.value = !ServerConfig.enableSmartScale.value
+        ServerConfig.save()
     }
 
     /** 设置智能缩放目标宽度 */
     fun setSmartScaleTargetWidth(width: Int) {
         ServerConfig.smartScaleTargetWidth.value = width
+        ServerConfig.save()
     }
 
     /** 设置 JPEG 压缩质量 */
     fun setJpegQuality(quality: Int) {
         ServerConfig.jpegQuality.value = quality.coerceIn(1, 100)
+        ServerConfig.save()
     }
 
     // ─── 调试配置修改 ──────────────────────────────────────
@@ -303,15 +318,18 @@ s.close()
     /** 切换调试存图 */
     fun toggleDebugSave() {
         ServerConfig.enableDebugSave.value = !ServerConfig.enableDebugSave.value
+        ServerConfig.save()
     }
 
     /** 切换详细日志 */
     fun toggleVerboseLog() {
         ServerConfig.enableVerboseLog.value = !ServerConfig.enableVerboseLog.value
+        ServerConfig.save()
     }
 
     /** 切换分块传输日志 */
     fun toggleChunkLog() {
         ServerConfig.enableChunkLog.value = !ServerConfig.enableChunkLog.value
+        ServerConfig.save()
     }
 }

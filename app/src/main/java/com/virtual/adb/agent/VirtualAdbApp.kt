@@ -45,6 +45,7 @@ class VirtualAdbApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        ServerConfig.init(this)
         installCrashHandler()
         AppLogger.i(TAG, "Virtual ADB Agent 应用启动")
     }
