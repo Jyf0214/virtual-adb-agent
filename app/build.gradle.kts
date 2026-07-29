@@ -42,7 +42,7 @@ android {
         // AGP 8.7.3 与 Kotlin 2.1.0 的兼容性问题：
         // 多个 Lint 检测器引用了 Kotlin 分析 API 中已被改为类的接口，
         // 导致 IncompatibleClassChangeError 崩溃。不影响代码质量。
-        disable += listOf("NullSafeMutableLiveData", "FlowOperatorInvokedInComposition", "RememberComposition")
+        disable += listOf("NullSafeMutableLiveData", "FlowOperatorInvokedInComposition", "RememberInComposition")
     }
 }
 
