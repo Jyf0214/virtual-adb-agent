@@ -15,28 +15,25 @@ import kotlin.random.Random
 
 /**
  * 无障碍桥梁服务
- *
- * 提供拟人化的手势注入能力：点击、滑动。
- * 所有手势均带有高斯随机偏移、肉垫挤压模拟和按压时间抖动，以降低被检测风险。
  */
 class AccessibilityBridgeService : AccessibilityService() {
 
     companion object {
         private const val TAG = "A11yBridgeService"
 
-        /** 静态实例引用，供 TcpBridgeServer 调用手势注入 */
+        /** 静态实例引用 */
         @Volatile
         var instance: AccessibilityBridgeService? = null
             private set
 
-        /** 高斯偏移标准差（像素） */
+        /** 坐标偏移标准差（像素） */
         private const val GAUSSIAN_OFFSET_STD = 3.0
 
-        /** 肉垫挤压线段长度范围（像素） */
+        /** 附加线段长度范围（像素） */
         private const val SQUEEZE_MIN = 1.0
         private const val SQUEEZE_MAX = 2.0
 
-        /** 按压时间范围（毫秒），正态分布 */
+        /** 按压时间范围（毫秒） */
         private const val PRESS_DURATION_MEAN_MS = 85L
         private const val PRESS_DURATION_STD_MS = 15L
         private const val PRESS_DURATION_MIN_MS = 60L
@@ -59,13 +56,11 @@ class AccessibilityBridgeService : AccessibilityService() {
         screenWidth = metrics.widthPixels
         screenHeight = metrics.heightPixels
         instance = this
-        // 自动注册到 TCP 服务器
         VirtualAdbApp.tcpServer.accessibilityService = this
         AppLogger.i(TAG, "无障碍服务已连接，屏幕尺寸: ${screenWidth}x${screenHeight}")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 本服务不处理无障碍事件，仅用于注入手势
     }
 
     override fun onInterrupt() {
@@ -80,11 +75,7 @@ class AccessibilityBridgeService : AccessibilityService() {
         AppLogger.i(TAG, "无障碍服务已销毁")
     }
 
-    // ─── 公开接口 ──────────────────────────────────────────────
-
     /**
-     * 注入点击手势
-     *
      * @param x 目标 X 坐标
      * @param y 目标 Y 坐标
      * @return JSON 响应字符串
@@ -94,7 +85,7 @@ class AccessibilityBridgeService : AccessibilityService() {
         val jitteredY = y + randomGaussianOffset()
         val pressDuration = randomPressDuration()
 
-        // 肉垫挤压：从中心产生微小偏移线段
+        // 从中心产生微小偏移线段
         val squeezeAngle = Random.nextFloat() * 2f * Math.PI.toFloat()
         val squeezeLen = Random.nextFloat() * (SQUEEZE_MAX.toFloat() - SQUEEZE_MIN.toFloat()) + SQUEEZE_MIN.toFloat()
         val dx = kotlin.math.cos(squeezeAngle.toDouble()).toFloat() * squeezeLen
@@ -102,7 +93,7 @@ class AccessibilityBridgeService : AccessibilityService() {
 
         val path = Path().apply {
             moveTo(jitteredX, jitteredY)
-            // 模拟肉垫挤压的微小线段
+            // 附加微小线段
             lineTo(jitteredX + dx * 0.5f, jitteredY + dy * 0.5f)
             lineTo(jitteredX - dx * 0.5f, jitteredY - dy * 0.5f)
             lineTo(jitteredX, jitteredY)
@@ -113,8 +104,6 @@ class AccessibilityBridgeService : AccessibilityService() {
     }
 
     /**
-     * 注入滑动手势
-     *
      * @param x1 起点 X
      * @param y1 起点 Y
      * @param x2 终点 X
@@ -127,7 +116,7 @@ class AccessibilityBridgeService : AccessibilityService() {
         x2: Float, y2: Float,
         durationMs: Long = 300L
     ): String {
-        // 起点和终点各加高斯偏移
+        // 起点和终点各加偏移
         val sx = x1 + randomGaussianOffset()
         val sy = y1 + randomGaussianOffset()
         val ex = x2 + randomGaussianOffset()
@@ -136,7 +125,7 @@ class AccessibilityBridgeService : AccessibilityService() {
         val path = Path().apply {
             moveTo(sx, sy)
 
-            // 分段绘制滑动轨迹，每段加入微小的横向抖动模拟手指不稳
+            // 分段绘制滑动轨迹，每段加入微小偏移
             for (i in 1..SWIPE_STEPS) {
                 val t = i.toFloat() / SWIPE_STEPS
                 val cx = lerp(sx, ex, t) + randomGaussianOffset() * 0.3f
@@ -149,39 +138,17 @@ class AccessibilityBridgeService : AccessibilityService() {
         return dispatchAndAwait(gesture, "swipe")
     }
 
-    /**
-     * 查询无障碍服务是否处于活跃状态
-     */
     fun isActive(): Boolean = true
 
     /**
-     * 获取当前前台应用信息
-     */
-    fun getForegroundPackage(): String? {
-        return try {
-            rootInActiveWindow?.packageName?.toString()
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "获取前台应用信息失败", e)
-            null
-        }
-    }
-
-    /**
-     * 获取屏幕尺寸
-     */
-    fun getScreenSize(): Pair<Int, Int> = Pair(screenWidth, screenHeight)
-
-    // ─── 内部实现 ──────────────────────────────────────────────
-
-    /**
-     * 生成高斯随机偏移（Box-Muller 变换）
+     * 生成随机偏移（Box-Muller 变换）
      */
     private fun randomGaussianOffset(): Float {
         return (gaussianRandom() * GAUSSIAN_OFFSET_STD).toFloat()
     }
 
     /**
-     * 生成正态分布的按压时长（限制在合理范围内）
+     * 生成按压时长（限制在合理范围内）
      */
     private fun randomPressDuration(): Long {
         val raw = (PRESS_DURATION_MEAN_MS + gaussianRandom() * PRESS_DURATION_STD_MS).toLong()
@@ -189,7 +156,7 @@ class AccessibilityBridgeService : AccessibilityService() {
     }
 
     /**
-     * Box-Muller 变换生成标准正态分布随机数
+     * Box-Muller 变换生成标准正态随机数
      */
     private fun gaussianRandom(): Double {
         val u1 = Random.nextDouble()
@@ -197,15 +164,10 @@ class AccessibilityBridgeService : AccessibilityService() {
         return kotlin.math.sqrt(-2.0 * kotlin.math.ln(u1)) * kotlin.math.cos(2.0 * Math.PI * u2)
     }
 
-    /**
-     * 构建 GestureDescription
-     *
-     * Android API 24+ 使用 StrokeDescription 支持连续路径手势。
-     */
     private fun buildGestureDescription(path: Path, durationMs: Long): GestureDescription {
         val strokeDescription = GestureDescription.StrokeDescription(
             path,
-            0L,               // 起始延迟
+            0L,
             durationMs.coerceAtLeast(1L)
         )
 
@@ -214,9 +176,6 @@ class AccessibilityBridgeService : AccessibilityService() {
             .build()
     }
 
-    /**
-     * 分发手势并等待回调结果
-     */
     private fun dispatchAndAwait(
         gesture: GestureDescription,
         actionName: String
@@ -245,8 +204,5 @@ class AccessibilityBridgeService : AccessibilityService() {
         }
     }
 
-    /**
-     * 线性插值
-     */
     private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
 }
