@@ -316,11 +316,9 @@ fun MainScreen(
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                         val clip = android.content.ClipData.newPlainText("tcp_logs", text)
                                         clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(
-                                            context,
-                                            context.getString(R.string.tcp_log_copied, tcpLogs.size),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        @Suppress("LocalContextGetResourceValueCall")
+                                        val tcpCopiedMsg = context.getString(R.string.tcp_log_copied, tcpLogs.size)
+                                        Toast.makeText(context, tcpCopiedMsg, Toast.LENGTH_SHORT).show()
                                     },
                                     modifier = Modifier.height(28.dp)
                                 ) {
@@ -409,11 +407,9 @@ fun MainScreen(
                                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                             val clip = android.content.ClipData.newPlainText("system_logs", text)
                                             clipboard.setPrimaryClip(clip)
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.syslog_copied, systemLogs.size),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                            @Suppress("LocalContextGetResourceValueCall")
+                                            val sysCopiedMsg = context.getString(R.string.syslog_copied, systemLogs.size)
+                                            Toast.makeText(context, sysCopiedMsg, Toast.LENGTH_SHORT).show()
                                         },
                                         modifier = Modifier.height(28.dp)
                                     ) {
@@ -587,7 +583,7 @@ fun MainScreen(
                                                 context.startActivity(
                                                     android.content.Intent.createChooser(
                                                         shareIntent,
-                                                        context.getString(R.string.debug_screenshot_share_title)
+                                                        context.resources.getString(R.string.debug_screenshot_share_title)
                                                     )
                                                 )
                                             },

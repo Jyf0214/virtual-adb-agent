@@ -88,6 +88,17 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // ─── 操作按钮 ───
+            // 提取字符串资源（避免在 onClick 中重复调用 getString 触发 Lint 警告）
+            val crashHeader = stringResource(R.string.crash_report_header)
+            val crashTime = stringResource(R.string.crash_report_time)
+            val crashThread = stringResource(R.string.crash_report_thread)
+            val crashException = stringResource(R.string.crash_report_exception)
+            val crashMessage = stringResource(R.string.crash_report_message)
+            val crashStackTrace = stringResource(R.string.crash_stack_trace)
+            val crashDeviceInfo = stringResource(R.string.crash_device_info)
+            val crashEmpty = stringResource(R.string.crash_report_empty)
+            val crashCopied = stringResource(R.string.crash_copied)
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -96,27 +107,27 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
                     onClick = {
                         val reportText = if (crashInfo != null) {
                             buildString {
-                                appendLine("=== ${context.getString(R.string.crash_report_header)} ===")
-                                appendLine("${context.getString(R.string.crash_report_time)}: ${crashInfo.timestamp}")
-                                appendLine("${context.getString(R.string.crash_report_thread)}: ${crashInfo.threadName}")
-                                appendLine("${context.getString(R.string.crash_report_exception)}: ${crashInfo.exceptionClass}")
-                                appendLine("${context.getString(R.string.crash_report_message)}: ${crashInfo.message}")
+                                appendLine("=== $crashHeader ===")
+                                appendLine("$crashTime: ${crashInfo.timestamp}")
+                                appendLine("$crashThread: ${crashInfo.threadName}")
+                                appendLine("$crashException: ${crashInfo.exceptionClass}")
+                                appendLine("$crashMessage: ${crashInfo.message}")
                                 appendLine()
-                                appendLine("=== ${context.getString(R.string.crash_stack_trace)} ===")
+                                appendLine("=== $crashStackTrace ===")
                                 appendLine(crashInfo.stackTrace)
                                 appendLine()
-                                appendLine("=== ${context.getString(R.string.crash_device_info)} ===")
+                                appendLine("=== $crashDeviceInfo ===")
                                 append(crashInfo.deviceInfo)
                             }
                         } else {
-                            context.getString(R.string.crash_report_empty)
+                            crashEmpty
                         }
 
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
                             as ClipboardManager
                         val clip = ClipData.newPlainText("crash_report", reportText)
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, context.getString(R.string.crash_copied), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, crashCopied, Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
@@ -192,7 +203,7 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = context.getString(R.string.crash_report_thread) + ": ${crashInfo.threadName}",
+                        text = "$crashThread: ${crashInfo.threadName}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
                     )
