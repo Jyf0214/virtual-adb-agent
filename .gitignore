@@ -1,3 +1,6 @@
+# VitePress build output
+.vitepress/dist/
+
 # Node.js
 node_modules/
 package-lock.json
