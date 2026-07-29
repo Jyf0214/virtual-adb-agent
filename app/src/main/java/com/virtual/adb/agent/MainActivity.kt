@@ -117,6 +117,11 @@ class MainActivity : ComponentActivity() {
             bindService(intent, captureConnection, Context.BIND_AUTO_CREATE)
         } catch (e: Exception) {
             AppLogger.e(TAG, "绑定屏幕捕捉服务失败", e)
+            android.widget.Toast.makeText(
+                this,
+                "绑定屏幕捕捉服务失败: ${e.message}",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
         }
     }
 

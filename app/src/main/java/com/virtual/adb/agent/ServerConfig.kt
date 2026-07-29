@@ -75,6 +75,12 @@ object ServerConfig {
     /** 分块传输日志（打印每个分块的传输详情） */
     val enableChunkLog = MutableStateFlow(false)
 
+    // ─── 应用状态 ───────────────────────────────────────────
+
+    /** 是否首次启动引导已完成 */
+    var isFirstLaunchDone = false
+        private set
+
     // ─── 持久化 ─────────────────────────────────────────────
 
     /**
@@ -102,6 +108,7 @@ object ServerConfig {
         enableDebugSave.value = prefs.getBoolean("debug_save", false)
         enableVerboseLog.value = prefs.getBoolean("verbose_log", false)
         enableChunkLog.value = prefs.getBoolean("chunk_log", false)
+        isFirstLaunchDone = prefs.getBoolean("first_launch_done", false)
 
         isLoaded = true
     }
@@ -125,6 +132,16 @@ object ServerConfig {
             .putBoolean("verbose_log", enableVerboseLog.value)
             .putBoolean("chunk_log", enableChunkLog.value)
             .apply()
+    }
+
+    /**
+     * 标记首次启动引导已完成
+     */
+    fun markFirstLaunchDone() {
+        isFirstLaunchDone = true
+        if (::prefs.isInitialized) {
+            prefs.edit().putBoolean("first_launch_done", true).apply()
+        }
     }
 
     /**

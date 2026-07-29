@@ -57,6 +57,7 @@ import com.virtual.adb.agent.DebugScreenshotManager
 import com.virtual.adb.agent.R
 import com.virtual.adb.agent.ResolutionMode
 import com.virtual.adb.agent.RotationMode
+import com.virtual.adb.agent.ServerConfig
 
 /**
  * 主界面 Compose UI
@@ -115,6 +116,53 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(modifier = Modifier.height(8.dp))
+
+            // ─── 首次启动引导卡片 ───
+            if (!ServerConfig.isFirstLaunchDone && (!a11yEnabled || !screenCaptureEnabled)) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.guide_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = stringResource(R.string.guide_step1),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = stringResource(R.string.guide_step2),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = stringResource(R.string.guide_step3),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = stringResource(R.string.guide_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                        )
+                        OutlinedButton(
+                            onClick = { viewModel.dismissFirstLaunchGuide() }
+                        ) {
+                            Text(stringResource(R.string.guide_dismiss))
+                        }
+                    }
+                }
+            }
 
             // ─── 无障碍服务状态卡片 ───
             PermissionCard(

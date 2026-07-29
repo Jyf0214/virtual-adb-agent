@@ -78,6 +78,14 @@
     <string name="debug_screenshot_share_title">分享截图</string>
     <string name="debug_screenshot_open_failed">打开图片失败</string>
 
+    <!-- ─── 首次启动引导 ─── -->
+    <string name="guide_title">使用步骤</string>
+    <string name="guide_step1">① 开启无障碍服务</string>
+    <string name="guide_step2">② 授权屏幕截取</string>
+    <string name="guide_step3">③ 启动 TCP 服务器</string>
+    <string name="guide_desc">通过 TCP 连接即可使用 ADB 客户端控制设备</string>
+    <string name="guide_dismiss">开始使用</string>
+
     <!-- ─── 崩溃页面 ─── -->
     <string name="crash_title">⚠ 应用异常</string>
     <string name="crash_copy_report">📋 复制崩溃报告</string>

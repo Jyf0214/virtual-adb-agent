@@ -66,6 +66,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** TCP 启动错误 */
     val tcpStartError: StateFlow<String> = tcpServer.startError
 
+    /** 首次启动引导是否已完成 */
+    val isFirstLaunchDone: Boolean get() = ServerConfig.isFirstLaunchDone
+
     // ─── ServerConfig 状态（供 UI 直接读取） ────────────────
 
     val resolutionMode: StateFlow<ResolutionMode> = ServerConfig.resolutionMode
@@ -331,5 +334,10 @@ s.close()
     fun toggleChunkLog() {
         ServerConfig.enableChunkLog.value = !ServerConfig.enableChunkLog.value
         ServerConfig.save()
+    }
+
+    /** 标记首次启动引导已完成 */
+    fun dismissFirstLaunchGuide() {
+        ServerConfig.markFirstLaunchDone()
     }
 }
