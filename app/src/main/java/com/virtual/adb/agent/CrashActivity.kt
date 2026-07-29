@@ -115,7 +115,7 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
                             as ClipboardManager
                         val clip = ClipData.newPlainText("crash_report", reportText)
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, stringResource(R.string.crash_copied), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.crash_copied), Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
