@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
+  base: '/virtual-adb-agent/',
   title: 'Virtual ADB Agent',
   description: '无需 Root 的 Android ADB 代理服务',
   lang: 'zh-CN',
