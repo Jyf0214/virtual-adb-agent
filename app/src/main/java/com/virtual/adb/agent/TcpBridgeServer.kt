@@ -23,7 +23,7 @@ import java.net.SocketException
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * ADB TCP 服务器 (全功能伪装版，)
+ * ADB TCP 服务器
  *
  * 实现 ADB 协议，监听 127.0.0.1:10000，允许标准 ADB 客户端
  * 通过无障碍服务和屏幕捕捉执行有限 ADB 功能。

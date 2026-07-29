@@ -58,12 +58,3 @@ adb -s 127.0.0.1:10000 shell input keyevent KEYCODE_APP_SWITCH
 adb -s 127.0.0.1:10000 shell wm size
 adb -s 127.0.0.1:10000 shell getprop ro.product.model
 ```
-
-## 
-
-
-
-```
-
-
-```
