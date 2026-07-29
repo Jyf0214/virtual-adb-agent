@@ -5,15 +5,15 @@ import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -44,16 +44,17 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.virtual.adb.agent.AppLogger
 import com.virtual.adb.agent.DebugScreenshotManager
+import com.virtual.adb.agent.R
 import com.virtual.adb.agent.ResolutionMode
 import com.virtual.adb.agent.RotationMode
 
@@ -63,7 +64,7 @@ import com.virtual.adb.agent.RotationMode
  * Material 3 动态配色设计，包含：
  * - 权限状态卡片（无障碍 + 屏幕捕捉）
  * - 服务控制开关
- * - 命令行工具箱
+ * - 服务器配置卡片
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +86,7 @@ fun MainScreen(
     val logMessage by viewModel.logMessage.collectAsState()
     val tcpLogs by viewModel.tcpLogs.collectAsState()
     val tcpStartError by viewModel.tcpStartError.collectAsState()
+    val isDeveloperMode by viewModel.isDeveloperMode.collectAsState()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -92,9 +94,9 @@ fun MainScreen(
             LargeTopAppBar(
                 title = {
                     Column {
-                        Text("Virtual ADB Agent")
+                        Text(stringResource(R.string.app_name))
                         Text(
-                            text = "本地 TCP 代理服务",
+                            text = stringResource(R.string.app_subtitle),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -116,32 +118,44 @@ fun MainScreen(
 
             // ─── 无障碍服务状态卡片 ───
             PermissionCard(
-                title = "无障碍服务",
-                description = if (a11yEnabled) "已启用，可执行手势操作" else "未启用，需要授权后才能执行点击/滑动",
+                title = stringResource(R.string.perm_a11y_title),
+                description = if (a11yEnabled)
+                    stringResource(R.string.perm_a11y_desc_enabled)
+                else
+                    stringResource(R.string.perm_a11y_desc_disabled),
                 icon = Icons.Default.Accessibility,
                 enabled = a11yEnabled,
                 onAction = onOpenA11ySettings,
-                actionText = if (a11yEnabled) "已就绪" else "前往设置"
+                actionText = if (a11yEnabled)
+                    stringResource(R.string.perm_a11y_action_ready)
+                else
+                    stringResource(R.string.perm_a11y_action_setup)
             )
 
             // ─── 屏幕捕捉状态卡片 ───
             PermissionCard(
-                title = "屏幕捕捉",
-                description = if (screenCaptureEnabled) "已授权，正在截取屏幕" else "未授权，需要授权后才能截图",
+                title = stringResource(R.string.perm_sc_title),
+                description = if (screenCaptureEnabled)
+                    stringResource(R.string.perm_sc_desc_enabled)
+                else
+                    stringResource(R.string.perm_sc_desc_disabled),
                 icon = Icons.Default.ScreenRotation,
                 enabled = screenCaptureEnabled,
                 onAction = {
-                    if (captureRunning) {
-                        onStopScreenCapture()
-                    } else {
-                        onRequestScreenCapture()
-                    }
+                    if (captureRunning) onStopScreenCapture()
+                    else onRequestScreenCapture()
                 },
-                actionText = if (captureRunning) "停止捕捉" else "授权并启动"
+                actionText = if (captureRunning)
+                    stringResource(R.string.perm_sc_action_stop)
+                else
+                    stringResource(R.string.perm_sc_action_start)
             )
 
             // ─── 服务器配置 ───
-            ServerConfigCard(viewModel = viewModel)
+            ServerConfigCard(
+                viewModel = viewModel,
+                isDeveloperMode = isDeveloperMode
+            )
 
             // ─── TCP 服务控制 ───
             Card(
@@ -164,7 +178,7 @@ fun MainScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "TCP 服务",
+                                text = stringResource(R.string.tcp_service_title),
                                 style = MaterialTheme.typography.titleLarge,
                                 color = if (tcpRunning)
                                     MaterialTheme.colorScheme.onPrimaryContainer
@@ -174,9 +188,9 @@ fun MainScreen(
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = if (tcpRunning) {
-                                    if (lanMode) "监听 0.0.0.0:$tcpPort（局域网）"
-                                    else "监听 127.0.0.1:$tcpPort"
-                                } else "点击开关启动服务",
+                                    val host = if (lanMode) "0.0.0.0" else "127.0.0.1"
+                                    stringResource(R.string.tcp_listening_lan, host, tcpPort)
+                                } else stringResource(R.string.tcp_hint_start),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = if (tcpRunning)
                                     MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
@@ -196,7 +210,7 @@ fun MainScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "局域网模式",
+                                    text = stringResource(R.string.tcp_lan_mode),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -225,7 +239,7 @@ fun MainScreen(
                         )
                     }
 
-                    // ─── TCP 日志（始终显示在开关下方）───
+                    // ─── TCP 日志 ───
                     Spacer(modifier = Modifier.height(12.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(12.dp))
@@ -236,7 +250,7 @@ fun MainScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "日志 (${tcpLogs.size})",
+                            text = stringResource(R.string.tcp_log_title, tcpLogs.size),
                             style = MaterialTheme.typography.titleSmall
                         )
                         if (tcpLogs.isNotEmpty()) {
@@ -247,23 +261,27 @@ fun MainScreen(
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                         val clip = android.content.ClipData.newPlainText("tcp_logs", text)
                                         clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "已复制 ${tcpLogs.size} 条日志", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.tcp_log_copied, tcpLogs.size),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     },
                                     modifier = Modifier.height(28.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "复制",
+                                        contentDescription = stringResource(R.string.tcp_btn_copy),
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("复制", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.tcp_btn_copy), style = MaterialTheme.typography.labelSmall)
                                 }
                                 FilledTonalButton(
                                     onClick = { viewModel.clearTcpLogs() },
                                     modifier = Modifier.height(28.dp)
                                 ) {
-                                    Text("清空", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.tcp_btn_clear), style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -273,7 +291,7 @@ fun MainScreen(
 
                     if (tcpLogs.isEmpty()) {
                         Text(
-                            text = "等待连接...",
+                            text = stringResource(R.string.tcp_log_empty),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
@@ -286,210 +304,6 @@ fun MainScreen(
                         ) {
                             tcpLogs.forEach { entry ->
                                 LogEntryItem(entry)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ─── 系统日志 ───
-            val systemLogs by AppLogger.logs.collectAsState()
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "系统日志 (${systemLogs.size})",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        if (systemLogs.isNotEmpty()) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilledTonalButton(
-                                    onClick = {
-                                        val text = systemLogs.joinToString("\n") { entry ->
-                                            val ts = formatTimestamp(entry.timestamp)
-                                            "[${ts}][${entry.level}/${entry.tag}] ${entry.message}"
-                                        }
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                        val clip = android.content.ClipData.newPlainText("system_logs", text)
-                                        clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "已复制 ${systemLogs.size} 条日志", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.height(28.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "复制",
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("复制", style = MaterialTheme.typography.labelSmall)
-                                }
-                                FilledTonalButton(
-                                    onClick = { AppLogger.clear() },
-                                    modifier = Modifier.height(28.dp)
-                                ) {
-                                    Text("清空", style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (systemLogs.isEmpty()) {
-                        Text(
-                            text = "无系统日志",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 200.dp)
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            systemLogs.takeLast(100).forEach { entry ->
-                                val levelColor = when (entry.level) {
-                                    "E" -> MaterialTheme.colorScheme.error
-                                    "W" -> MaterialTheme.colorScheme.tertiary
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 2.dp),
-                                    verticalAlignment = Alignment.Top
-                                ) {
-                                    Text(
-                                        text = entry.level,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = levelColor,
-                                        modifier = Modifier.width(24.dp)
-                                    )
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "${formatTimestamp(entry.timestamp)} ${entry.tag}: ${entry.message}",
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                fontFamily = FontFamily.Monospace
-                                            ),
-                                            maxLines = 3,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ─── 调试截图列表 ───
-            val screenshots by DebugScreenshotManager.screenshots.collectAsState()
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "调试截图 (${screenshots.size}/10)",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        if (screenshots.isNotEmpty()) {
-                            FilledTonalButton(
-                                onClick = { DebugScreenshotManager.clearAll() },
-                                modifier = Modifier.height(28.dp)
-                            ) {
-                                Text("清空全部", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (screenshots.isEmpty()) {
-                        Text(
-                            text = "无调试截图（需开启「调试存图」开关）",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 240.dp)
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            screenshots.reversed().forEach { info ->
-                                val uri = androidx.core.content.FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.fileprovider",
-                                    java.io.File(info.filePath)
-                                )
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = info.fileName,
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                fontFamily = FontFamily.Monospace
-                                            ),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = formatFileSize(info.sizeBytes),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    FilledTonalButton(
-                                        onClick = {
-                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                                setDataAndType(uri, "image/png")
-                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            try {
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) {
-                                                android.widget.Toast.makeText(context, "打开图片失败", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                        modifier = Modifier.height(28.dp)
-                                    ) {
-                                        Text("查看", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    FilledTonalButton(
-                                        onClick = {
-                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                type = "image/png"
-                                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            context.startActivity(android.content.Intent.createChooser(shareIntent, "分享截图"))
-                                        },
-                                        modifier = Modifier.height(28.dp)
-                                    ) {
-                                        Text("分享", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                }
                             }
                         }
                     }
@@ -509,6 +323,227 @@ fun MainScreen(
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+
+            // ─── 系统日志（仅开发者模式） ───
+            if (isDeveloperMode) {
+                val systemLogs by AppLogger.logs.collectAsState()
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.syslog_title, systemLogs.size),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            if (systemLogs.isNotEmpty()) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilledTonalButton(
+                                        onClick = {
+                                            val text = systemLogs.joinToString("\n") { entry ->
+                                                val ts = formatTimestamp(entry.timestamp)
+                                                "[${ts}][${entry.level}/${entry.tag}] ${entry.message}"
+                                            }
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("system_logs", text)
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.syslog_copied, systemLogs.size),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = stringResource(R.string.tcp_btn_copy),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(stringResource(R.string.tcp_btn_copy), style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    FilledTonalButton(
+                                        onClick = { AppLogger.clear() },
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text(stringResource(R.string.tcp_btn_clear), style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (systemLogs.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.syslog_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 200.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                systemLogs.takeLast(100).forEach { entry ->
+                                    val levelColor = when (entry.level) {
+                                        "E" -> MaterialTheme.colorScheme.error
+                                        "W" -> MaterialTheme.colorScheme.tertiary
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 2.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Text(
+                                            text = entry.level,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = levelColor,
+                                            modifier = Modifier.width(24.dp)
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${formatTimestamp(entry.timestamp)} ${entry.tag}: ${entry.message}",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    fontFamily = FontFamily.Monospace
+                                                ),
+                                                maxLines = 3,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ─── 调试截图列表（仅开发者模式） ───
+            if (isDeveloperMode) {
+                val screenshots by DebugScreenshotManager.screenshots.collectAsState()
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.debug_screenshot_title, screenshots.size),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            if (screenshots.isNotEmpty()) {
+                                FilledTonalButton(
+                                    onClick = { DebugScreenshotManager.clearAll() },
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text(stringResource(R.string.debug_screenshot_clear), style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (screenshots.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.debug_screenshot_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 240.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                screenshots.reversed().forEach { info ->
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        java.io.File(info.filePath)
+                                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = info.fileName,
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    fontFamily = FontFamily.Monospace
+                                                ),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = formatFileSize(info.sizeBytes),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        FilledTonalButton(
+                                            onClick = {
+                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                                    setDataAndType(uri, "image/png")
+                                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                }
+                                                try {
+                                                    context.startActivity(intent)
+                                                } catch (e: Exception) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        R.string.debug_screenshot_open_failed,
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            },
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Text(stringResource(R.string.debug_screenshot_view), style = MaterialTheme.typography.labelSmall)
+                                        }
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        FilledTonalButton(
+                                            onClick = {
+                                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                    type = "image/png"
+                                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                }
+                                                context.startActivity(
+                                                    android.content.Intent.createChooser(
+                                                        shareIntent,
+                                                        context.getString(R.string.debug_screenshot_share_title)
+                                                    )
+                                                )
+                                            },
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Text(stringResource(R.string.debug_screenshot_share), style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -591,10 +626,13 @@ private fun PermissionCard(
 /**
  * 服务器配置卡片
  *
- * 包含：分辨率模式、截图旋转模式、自定义分辨率输入
+ * 包含：分辨率模式、截图旋转模式、自定义分辨率、截图性能、调试选项
  */
 @Composable
-private fun ServerConfigCard(viewModel: MainViewModel) {
+private fun ServerConfigCard(
+    viewModel: MainViewModel,
+    isDeveloperMode: Boolean
+) {
     val resolutionMode by viewModel.resolutionMode.collectAsState()
     val rotationMode by viewModel.rotationMode.collectAsState()
     val customWidth by viewModel.customWidth.collectAsState()
@@ -618,11 +656,11 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
         ) {
             // ─── 分辨率模式 ───
             Text(
-                text = "分辨率返回模式",
+                text = stringResource(R.string.config_resolution_mode),
                 style = MaterialTheme.typography.titleSmall
             )
             Text(
-                text = "控制 wm size 命令返回给 ADB 客户端的分辨率",
+                text = stringResource(R.string.config_resolution_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -640,10 +678,10 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = when (mode) {
-                            ResolutionMode.REAL_SYSTEM -> "跟随系统真实"
-                            ResolutionMode.FORCE_LANDSCAPE -> "强制横屏 (宽>高)"
-                            ResolutionMode.FORCE_PORTRAIT -> "强制竖屏 (宽<高)"
-                            ResolutionMode.CUSTOM -> "自定义"
+                            ResolutionMode.REAL_SYSTEM -> stringResource(R.string.config_resolution_real)
+                            ResolutionMode.FORCE_LANDSCAPE -> stringResource(R.string.config_resolution_landscape)
+                            ResolutionMode.FORCE_PORTRAIT -> stringResource(R.string.config_resolution_portrait)
+                            ResolutionMode.CUSTOM -> stringResource(R.string.config_resolution_custom)
                         },
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -661,7 +699,7 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
                         onValueChange = { value ->
                             value.toIntOrNull()?.let { viewModel.setCustomResolution(it, customHeight) }
                         },
-                        label = { Text("宽度") },
+                        label = { Text(stringResource(R.string.config_width)) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
@@ -670,7 +708,7 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
                         onValueChange = { value ->
                             value.toIntOrNull()?.let { viewModel.setCustomResolution(customWidth, it) }
                         },
-                        label = { Text("高度") },
+                        label = { Text(stringResource(R.string.config_height)) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
@@ -681,11 +719,11 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
 
             // ─── 截图旋转模式 ───
             Text(
-                text = "截图旋转矫正",
+                text = stringResource(R.string.config_rotation_mode),
                 style = MaterialTheme.typography.titleSmall
             )
             Text(
-                text = "控制截图返回给 ADB 客户端时的旋转角度",
+                text = stringResource(R.string.config_rotation_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -703,10 +741,10 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = when (mode) {
-                            RotationMode.AUTO_SENSOR -> "智能感应 (Display.rotation)"
-                            RotationMode.NONE -> "不旋转 (原图)"
-                            RotationMode.ROTATE_90 -> "强制 90°"
-                            RotationMode.ROTATE_270 -> "强制 270°"
+                            RotationMode.AUTO_SENSOR -> stringResource(R.string.config_rotation_auto)
+                            RotationMode.NONE -> stringResource(R.string.config_rotation_none)
+                            RotationMode.ROTATE_90 -> stringResource(R.string.config_rotation_90)
+                            RotationMode.ROTATE_270 -> stringResource(R.string.config_rotation_270)
                         },
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -717,7 +755,7 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
 
             // ─── 截图性能配置 ───
             Text(
-                text = "截图性能",
+                text = stringResource(R.string.config_perf_title),
                 style = MaterialTheme.typography.titleSmall
             )
 
@@ -729,11 +767,11 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "智能缩放",
+                        text = stringResource(R.string.config_smart_scale),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        text = "宽度超过目标值时等比缩放，减小图片体积",
+                        text = stringResource(R.string.config_smart_scale_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -752,7 +790,7 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "目标宽度:",
+                        text = stringResource(R.string.config_smart_scale_target),
                         style = MaterialTheme.typography.bodySmall
                     )
                     listOf(720, 1280, 1920).forEach { width ->
@@ -777,11 +815,11 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "JPEG 质量: ${jpegQuality}%",
+                        text = stringResource(R.string.config_jpeg_quality, jpegQuality),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        text = "100% = 无损，80% = 有损压缩",
+                        text = stringResource(R.string.config_jpeg_quality_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -801,81 +839,130 @@ private fun ServerConfigCard(viewModel: MainViewModel) {
                 }
             }
 
-            HorizontalDivider()
+            // ─── 调试选项（仅开发者模式可见） ───
+            if (isDeveloperMode) {
+                HorizontalDivider()
 
-            // ─── 调试配置 ───
-            Text(
-                text = "调试选项",
-                style = MaterialTheme.typography.titleSmall
-            )
+                Text(
+                    text = stringResource(R.string.config_debug_title),
+                    style = MaterialTheme.typography.titleSmall
+                )
 
-            // 调试存图
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "调试存图",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = "每次截图保存一份到本地: files/adb_screencap_debug.png",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                // 开发者模式开关自身
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.config_dev_mode),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.config_dev_mode_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = true, // 已经在这个分支里了，所以必定是 true
+                        onCheckedChange = { viewModel.toggleDeveloperMode() }
                     )
                 }
-                Switch(
-                    checked = enableDebugSave,
-                    onCheckedChange = { viewModel.toggleDebugSave() }
-                )
-            }
 
-            // 详细日志
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "详细日志",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = "打印截图尺寸、耗时、文件大小等信息",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                // 调试存图
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.config_debug_save),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.config_debug_save_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = enableDebugSave,
+                        onCheckedChange = { viewModel.toggleDebugSave() }
                     )
                 }
-                Switch(
-                    checked = enableVerboseLog,
-                    onCheckedChange = { viewModel.toggleVerboseLog() }
-                )
-            }
 
-            // 分块传输日志
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "分块传输日志",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = "打印每个数据块的传输详情（调试用）",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                // 详细日志
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.config_verbose_log),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.config_verbose_log_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = enableVerboseLog,
+                        onCheckedChange = { viewModel.toggleVerboseLog() }
                     )
                 }
-                Switch(
-                    checked = enableChunkLog,
-                    onCheckedChange = { viewModel.toggleChunkLog() }
-                )
+
+                // 分块传输日志
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.config_chunk_log),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.config_chunk_log_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = enableChunkLog,
+                        onCheckedChange = { viewModel.toggleChunkLog() }
+                    )
+                }
+            } else {
+                // 非开发者模式：只显示一个进入开发者模式的入口
+                HorizontalDivider()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.config_dev_mode),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.config_dev_mode_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = false,
+                        onCheckedChange = { viewModel.toggleDeveloperMode() }
+                    )
+                }
             }
         }
     }

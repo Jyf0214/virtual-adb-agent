@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -70,7 +71,7 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
             TopAppBar(
                 title = {
                     Text(
-                        text = "⚠ 应用异常",
+                        text = stringResource(R.string.crash_title),
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -94,34 +95,34 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
                     onClick = {
                         val reportText = if (crashInfo != null) {
                             buildString {
-                                appendLine("=== 应用崩溃报告 ===")
-                                appendLine("时间: ${crashInfo.timestamp}")
-                                appendLine("线程: ${crashInfo.threadName}")
-                                appendLine("异常: ${crashInfo.exceptionClass}")
-                                appendLine("消息: ${crashInfo.message}")
+                                appendLine("=== ${context.getString(R.string.crash_report_header)} ===")
+                                appendLine("${context.getString(R.string.crash_report_time)}: ${crashInfo.timestamp}")
+                                appendLine("${context.getString(R.string.crash_report_thread)}: ${crashInfo.threadName}")
+                                appendLine("${context.getString(R.string.crash_report_exception)}: ${crashInfo.exceptionClass}")
+                                appendLine("${context.getString(R.string.crash_report_message)}: ${crashInfo.message}")
                                 appendLine()
-                                appendLine("=== 堆栈跟踪 ===")
+                                appendLine("=== ${context.getString(R.string.crash_stack_trace)} ===")
                                 appendLine(crashInfo.stackTrace)
                                 appendLine()
-                                appendLine("=== 设备信息 ===")
+                                appendLine("=== ${context.getString(R.string.crash_device_info)} ===")
                                 append(crashInfo.deviceInfo)
                             }
                         } else {
-                            "无崩溃信息"
+                            context.getString(R.string.crash_report_empty)
                         }
 
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
                             as ClipboardManager
                         val clip = ClipData.newPlainText("crash_report", reportText)
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "崩溃报告已复制到剪贴板", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, stringResource(R.string.crash_copied), Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("📋 复制崩溃报告", fontSize = 14.sp)
+                    Text(stringResource(R.string.crash_copy_report), fontSize = 14.sp)
                 }
 
                 OutlinedButton(
@@ -131,13 +132,13 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("返回", fontSize = 14.sp)
+                    Text(stringResource(R.string.crash_go_back), fontSize = 14.sp)
                 }
             }
 
             if (crashInfo == null) {
                 Text(
-                    text = "没有捕获到崩溃信息",
+                    text = stringResource(R.string.crash_no_info),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -155,7 +156,7 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
                     .padding(16.dp)
             ) {
                 Text(
-                    text = "异常类型",
+                    text = stringResource(R.string.crash_exception_type),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
                 )
@@ -171,7 +172,7 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "错误消息",
+                    text = stringResource(R.string.crash_error_message),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
                 )
@@ -190,7 +191,7 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "线程: ${crashInfo.threadName}",
+                        text = context.getString(R.string.crash_report_thread) + ": ${crashInfo.threadName}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
                     )
@@ -213,7 +214,7 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
                     .padding(16.dp)
             ) {
                 Text(
-                    text = "📱 设备信息",
+                    text = stringResource(R.string.crash_device_info),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
@@ -239,7 +240,7 @@ private fun CrashScreen(crashInfo: CrashInfo?) {
                     .padding(16.dp)
             ) {
                 Text(
-                    text = "📄 堆栈跟踪",
+                    text = stringResource(R.string.crash_stack_trace),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFFD4D4D4)
