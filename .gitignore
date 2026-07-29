@@ -6,6 +6,9 @@ node_modules/
 package-lock.json
 yarn.lock
 
+# 但 docs/ 是 VitePress 项目，需要提交 lockfile
+!docs/package-lock.json
+
 # 旧沙箱文件
 .codesandbox/
 .devcontainer/
