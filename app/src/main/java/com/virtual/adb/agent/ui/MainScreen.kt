@@ -690,7 +690,6 @@ private fun ServerConfigCard(
     val jpegQuality by viewModel.jpegQuality.collectAsState()
     val enableDebugSave by viewModel.enableDebugSave.collectAsState()
     val enableVerboseLog by viewModel.enableVerboseLog.collectAsState()
-    val enableChunkLog by viewModel.enableChunkLog.collectAsState()
 
     Card(
         modifier = Modifier
@@ -962,29 +961,6 @@ private fun ServerConfigCard(
                     Switch(
                         checked = enableVerboseLog,
                         onCheckedChange = { viewModel.toggleVerboseLog() }
-                    )
-                }
-
-                // 分块传输日志
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.config_chunk_log),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = stringResource(R.string.config_chunk_log_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = enableChunkLog,
-                        onCheckedChange = { viewModel.toggleChunkLog() }
                     )
                 }
             } else {

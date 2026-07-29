@@ -29,8 +29,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 
 /**
  * 屏幕捕捉前台服务
@@ -118,35 +116,6 @@ class ScreenCaptureService : Service() {
     }
 
     // ─── 公开接口 ──────────────────────────────────────────────
-
-    /**
-     * 获取最新一帧的 JPEG 数据
-     *
-     * @param quality JPEG 压缩质量 (1-100)
-     * @return JPEG 字节数组，未捕捉或失败时返回 null
-     */
-    suspend fun getLatestFrameJpeg(quality: Int = DEFAULT_JPEG_QUALITY): ByteArray? {
-        if (!_isActive.value) return null
-
-        return withContext(Dispatchers.IO) {
-            try {
-                val image: Image = imageReader?.acquireLatestImage() ?: return@withContext null
-                val bitmap = imageToBitmap(image)
-                image.close()
-
-                if (bitmap != null) {
-                    val jpeg = bitmapToJpeg(bitmap, quality)
-                    bitmap.recycle()
-                    jpeg
-                } else {
-                    null
-                }
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "获取截图失败", e)
-                null
-            }
-        }
-    }
 
     /**
      * 获取最新一帧的原生 Bitmap（跳过 JPEG 编解码，性能最优）
@@ -408,15 +377,6 @@ class ScreenCaptureService : Service() {
             AppLogger.e(TAG, "Image 转 Bitmap 失败", e)
             null
         }
-    }
-
-    /**
-     * Bitmap -> JPEG 压缩
-     */
-    private fun bitmapToJpeg(bitmap: Bitmap, quality: Int): ByteArray {
-        val outputStream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), outputStream)
-        return outputStream.toByteArray()
     }
 
     /**

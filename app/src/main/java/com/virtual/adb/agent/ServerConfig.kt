@@ -72,9 +72,6 @@ object ServerConfig {
     /** 详细日志（打印截图尺寸、耗时等信息） */
     val enableVerboseLog = MutableStateFlow(false)
 
-    /** 分块传输日志（打印每个分块的传输详情） */
-    val enableChunkLog = MutableStateFlow(false)
-
     // ─── 应用状态 ───────────────────────────────────────────
 
     /** 是否首次启动引导已完成 */
@@ -107,7 +104,6 @@ object ServerConfig {
         isDeveloperMode.value = prefs.getBoolean("developer_mode", false)
         enableDebugSave.value = prefs.getBoolean("debug_save", false)
         enableVerboseLog.value = prefs.getBoolean("verbose_log", false)
-        enableChunkLog.value = prefs.getBoolean("chunk_log", false)
         isFirstLaunchDone = prefs.getBoolean("first_launch_done", false)
 
         isLoaded = true
@@ -130,7 +126,6 @@ object ServerConfig {
             .putBoolean("developer_mode", isDeveloperMode.value)
             .putBoolean("debug_save", enableDebugSave.value)
             .putBoolean("verbose_log", enableVerboseLog.value)
-            .putBoolean("chunk_log", enableChunkLog.value)
             .apply()
     }
 
@@ -142,23 +137,6 @@ object ServerConfig {
         if (::prefs.isInitialized) {
             prefs.edit().putBoolean("first_launch_done", true).apply()
         }
-    }
-
-    /**
-     * 重置所有配置为默认值（仅内存，调用 [save] 后才会覆写持久化）
-     */
-    fun resetToDefaults() {
-        resolutionMode.value = ResolutionMode.REAL_SYSTEM
-        rotationMode.value = RotationMode.AUTO_SENSOR
-        customWidth.value = 1920
-        customHeight.value = 1080
-        enableSmartScale.value = true
-        smartScaleTargetWidth.value = 1280
-        jpegQuality.value = 100
-        isDeveloperMode.value = false
-        enableDebugSave.value = false
-        enableVerboseLog.value = false
-        enableChunkLog.value = false
     }
 
     private inline fun <reified T : Enum<T>> tryParseEnum(value: String?, default: T): T {

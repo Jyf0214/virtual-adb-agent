@@ -9,8 +9,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.random.Random
 
 /**
@@ -42,9 +40,6 @@ class AccessibilityBridgeService : AccessibilityService() {
         /** 滑动时的分段步数 */
         private const val SWIPE_STEPS = 20
     }
-
-    /** 用于响应 TCP 请求的回调 */
-    var onRequestResult: ((String) -> Unit)? = null
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var screenWidth = 0
@@ -137,8 +132,6 @@ class AccessibilityBridgeService : AccessibilityService() {
         val gesture = buildGestureDescription(path, durationMs)
         return dispatchAndAwait(gesture, "swipe")
     }
-
-    fun isActive(): Boolean = true
 
     /**
      * 生成随机偏移（Box-Muller 变换）

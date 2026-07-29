@@ -85,7 +85,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isDeveloperMode: StateFlow<Boolean> = ServerConfig.isDeveloperMode
     val enableDebugSave: StateFlow<Boolean> = ServerConfig.enableDebugSave
     val enableVerboseLog: StateFlow<Boolean> = ServerConfig.enableVerboseLog
-    val enableChunkLog: StateFlow<Boolean> = ServerConfig.enableChunkLog
 
     // ─── MediaProjection 授权结果待处理 ──────────────────────
     private var pendingProjectionResultCode = 0
@@ -327,12 +326,6 @@ s.close()
     /** 切换详细日志 */
     fun toggleVerboseLog() {
         ServerConfig.enableVerboseLog.value = !ServerConfig.enableVerboseLog.value
-        ServerConfig.save()
-    }
-
-    /** 切换分块传输日志 */
-    fun toggleChunkLog() {
-        ServerConfig.enableChunkLog.value = !ServerConfig.enableChunkLog.value
         ServerConfig.save()
     }
 

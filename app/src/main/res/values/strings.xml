@@ -20,7 +20,6 @@
     <!-- TCP service card -->
     <string name="tcp_service_title">TCP Service</string>
     <string name="tcp_listening_lan">Listening %s:%d (LAN)</string>
-    <string name="tcp_listening_local">Listening %s:%d</string>
     <string name="tcp_hint_start">Toggle to start the service</string>
     <string name="tcp_lan_mode">LAN Mode</string>
     <string name="tcp_log_title">Log (%d)</string>
@@ -61,8 +60,6 @@
     <string name="config_debug_save_desc">Save a local copy for every screenshot taken</string>
     <string name="config_verbose_log">Verbose Log</string>
     <string name="config_verbose_log_desc">Log screenshot dimensions, timing, and file size info</string>
-    <string name="config_chunk_log">Chunk Transfer Log</string>
-    <string name="config_chunk_log_desc">Log details of each data chunk transfer (debug)</string>
 
     <!-- System log -->
     <string name="syslog_title">System Log (%d)</string>
