@@ -46,9 +46,6 @@ class ScreenCaptureService : Service() {
         /** ImageReader 缩放比例（1.0 = 原始分辨率，0.5 = 半分辨率） */
         private const val CAPTURE_SCALE = 1.0f
 
-        /** JPEG 压缩质量默认值 */
-        private const val DEFAULT_JPEG_QUALITY = 100
-
         private const val ACTION_START = "com.virtual.adb.agent.action.START_CAPTURE"
         private const val ACTION_STOP = "com.virtual.adb.agent.action.STOP_CAPTURE"
         private const val EXTRA_RESULT_CODE = "result_code"
@@ -268,9 +265,9 @@ class ScreenCaptureService : Service() {
         if (displayListener != null) return
         val dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         displayListener = object : DisplayManager.DisplayListener {
-            override fun onDisplayAdded(displayId: Int) {}
+            override fun onDisplayAdded(displayId: Int) = Unit
 
-            override fun onDisplayRemoved(displayId: Int) {}
+            override fun onDisplayRemoved(displayId: Int) = Unit
 
             override fun onDisplayChanged(displayId: Int) {
                 recreateVirtualDisplayIfNeeded()

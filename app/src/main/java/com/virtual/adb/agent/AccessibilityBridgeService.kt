@@ -55,8 +55,7 @@ class AccessibilityBridgeService : AccessibilityService() {
         AppLogger.i(TAG, "无障碍服务已连接，屏幕尺寸: ${screenWidth}x${screenHeight}")
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
 
     override fun onInterrupt() {
         AppLogger.w(TAG, "无障碍服务被系统中断")

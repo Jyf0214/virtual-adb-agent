@@ -225,7 +225,7 @@ class TcpBridgeServer(
             // 读取 CNXN 握手
             val cnxn = readMessage(input)
             if (cnxn == null || cnxn.command != CMD_CNXN) {
-                val rawHex = lastRawHeader?.joinToString(" ") { String.format("%02x", it) } ?: "无"
+                val rawHex = lastRawHeader?.joinToString(" ") { String.format(java.util.Locale.ROOT, "%02x", it) } ?: "无"
                 val diag = if (cnxn != null) {
                     "cmd=0x${Integer.toHexString(cnxn.command)} arg0=${cnxn.arg0} arg1=${cnxn.arg1} len=${cnxn.dataLength}"
                 } else {
@@ -839,7 +839,7 @@ class TcpBridgeServer(
             if (text.length > 300) " data=\"${text.take(300)}...\""
             else " data=\"$text\""
         } else {
-            val hex = data.take(64).joinToString(" ") { String.format("%02x", it) }
+            val hex = data.take(64).joinToString(" ") { String.format(java.util.Locale.ROOT, "%02x", it) }
             val suffix = if (data.size > 64) " ...(${data.size}B)" else " (${data.size}B)"
             " hex=$hex$suffix"
         }
