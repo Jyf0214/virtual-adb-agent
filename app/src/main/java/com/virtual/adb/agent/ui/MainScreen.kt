@@ -1024,7 +1024,7 @@ private fun LogEntryItem(entry: com.virtual.adb.agent.TcpBridgeServer.LogEntry) 
     val directionColor = when (entry.direction) {
         "→" -> MaterialTheme.colorScheme.primary
         "←" -> MaterialTheme.colorScheme.tertiary
-        "✗" -> MaterialTheme.colorScheme.error
+        "x" -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 

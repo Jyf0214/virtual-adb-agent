@@ -219,8 +219,8 @@ class TcpBridgeServer(
                 } else {
                     "readMessage 返回 null"
                 }
-                appendLog("✗", clientAddr, "握手失败: $diag")
-                appendLog("✗", clientAddr, "原始24字节: $rawHex")
+                appendLog("x", clientAddr, "握手失败: $diag")
+                appendLog("x", clientAddr, "原始24字节: $rawHex")
                 socket.close()
                 return
             }
@@ -402,14 +402,14 @@ class TcpBridgeServer(
                     }
 
                     else -> {
-                        appendLog("✗", clientAddr, "未处理命令，已忽略")
+                        appendLog("x", clientAddr, "未处理命令，已忽略")
                     }
                 }
             }
         } catch (e: SocketException) {
-            appendLog("✗", clientAddr, "连接断开: ${e.message}")
+            appendLog("x", clientAddr, "连接断开: ${e.message}")
         } catch (e: Exception) {
-            appendLog("✗", clientAddr, "异常: ${e.message}")
+            appendLog("x", clientAddr, "异常: ${e.message}")
             AppLogger.e(TAG, "处理 ADB 客户端异常", e)
         } finally {
             try {
