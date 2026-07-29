@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -421,7 +422,7 @@ class TcpBridgeServer(
 
     // ─── ADB 命令全量路由处理 ──────────────────────────────────────
 
-    private fun processCommandToBytes(command: String, clientAddr: String): ByteArray {
+    private suspend fun processCommandToBytes(command: String, clientAddr: String): ByteArray {
         AppLogger.d(TAG, "执行命令: $command")
 
         return try {
@@ -609,19 +610,20 @@ class TcpBridgeServer(
         return result.toByteArray(Charsets.UTF_8)
     }
 
-    private fun handleInputTap(command: String): ByteArray {
+    private suspend fun handleInputTap(command: String): ByteArray {
         val parts = command.split("\\s+".toRegex())
         if (parts.size >= 4) {
             val x = parts[2].toFloatOrNull()
             val y = parts[3].toFloatOrNull()
             if (x != null && y != null) {
                 accessibilityService?.injectClick(x, y)
+                delay(100L)
             }
         }
         return "\n".toByteArray(Charsets.UTF_8)
     }
 
-    private fun handleInputSwipe(command: String): ByteArray {
+    private suspend fun handleInputSwipe(command: String): ByteArray {
         val parts = command.split("\\s+".toRegex())
         if (parts.size >= 6) {
             val x1 = parts[2].toFloatOrNull()
@@ -631,12 +633,14 @@ class TcpBridgeServer(
             val duration = parts.getOrNull(6)?.toLongOrNull() ?: 300L
             if (x1 != null && y1 != null && x2 != null && y2 != null) {
                 accessibilityService?.injectSwipe(x1, y1, x2, y2, duration)
+                // 阻塞到滑动真正完成，防止下一条指令中断当前手势
+                delay(duration + 50L)
             }
         }
         return "\n".toByteArray(Charsets.UTF_8)
     }
 
-    private fun handleInputKeyevent(command: String): ByteArray {
+    private suspend fun handleInputKeyevent(command: String): ByteArray {
         val parts = command.split("\\s+".toRegex())
         if (parts.size >= 3) {
             when (parts[2]) {
@@ -644,11 +648,13 @@ class TcpBridgeServer(
                 "4", "KEYCODE_BACK" -> accessibilityService?.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
                 "187", "KEYCODE_APP_SWITCH" -> accessibilityService?.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS)
             }
+            delay(150L)
         }
         return "\n".toByteArray(Charsets.UTF_8)
     }
 
-    private fun handleInputText(command: String): ByteArray {
+    private suspend fun handleInputText(command: String): ByteArray {
+        delay(100L)
         return "\n".toByteArray(Charsets.UTF_8)
     }
 
