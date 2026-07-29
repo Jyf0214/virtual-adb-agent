@@ -1,114 +1,114 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Virtual ADB Agent</string>
-    <string name="app_subtitle">本地 TCP 代理服务</string>
+    <string name="app_subtitle">Local TCP Bridge</string>
 
-    <!-- ─── 无障碍服务卡片 ─── -->
-    <string name="perm_a11y_title">无障碍服务</string>
-    <string name="perm_a11y_desc_enabled">已启用，可执行手势操作</string>
-    <string name="perm_a11y_desc_disabled">未启用，需要授权后才能执行点击/滑动</string>
-    <string name="perm_a11y_action_ready">已就绪</string>
-    <string name="perm_a11y_action_setup">前往设置</string>
+    <!-- Accessibility service card -->
+    <string name="perm_a11y_title">Accessibility Service</string>
+    <string name="perm_a11y_desc_enabled">Enabled</string>
+    <string name="perm_a11y_desc_disabled">Disabled</string>
+    <string name="perm_a11y_action_ready">Ready</string>
+    <string name="perm_a11y_action_setup">Open Settings</string>
 
-    <!-- ─── 屏幕捕捉卡片 ─── -->
-    <string name="perm_sc_title">屏幕捕捉</string>
-    <string name="perm_sc_desc_enabled">已授权，正在截取屏幕</string>
-    <string name="perm_sc_desc_disabled">未授权，需要授权后才能截图</string>
-    <string name="perm_sc_action_stop">停止捕捉</string>
-    <string name="perm_sc_action_start">授权并启动</string>
+    <!-- Screen capture card -->
+    <string name="perm_sc_title">Screen Capture</string>
+    <string name="perm_sc_desc_enabled">Authorized, capturing screen</string>
+    <string name="perm_sc_desc_disabled">Not authorized</string>
+    <string name="perm_sc_action_stop">Stop Capture</string>
+    <string name="perm_sc_action_start">Authorize &amp; Start</string>
 
-    <!-- ─── TCP 服务卡片 ─── -->
-    <string name="tcp_service_title">TCP 服务</string>
-    <string name="tcp_listening_lan">监听 %s:%d（局域网）</string>
-    <string name="tcp_listening_local">监听 %s:%d</string>
-    <string name="tcp_hint_start">点击开关启动服务</string>
-    <string name="tcp_lan_mode">局域网模式</string>
-    <string name="tcp_log_title">日志 (%d)</string>
-    <string name="tcp_log_empty">等待连接…</string>
-    <string name="tcp_btn_copy">复制</string>
-    <string name="tcp_btn_clear">清空</string>
-    <string name="tcp_log_copied">已复制 %d 条日志</string>
+    <!-- TCP service card -->
+    <string name="tcp_service_title">TCP Service</string>
+    <string name="tcp_listening_lan">Listening %s:%d (LAN)</string>
+    <string name="tcp_listening_local">Listening %s:%d</string>
+    <string name="tcp_hint_start">Toggle to start the service</string>
+    <string name="tcp_lan_mode">LAN Mode</string>
+    <string name="tcp_log_title">Log (%d)</string>
+    <string name="tcp_log_empty">Waiting for connection...</string>
+    <string name="tcp_btn_copy">Copy</string>
+    <string name="tcp_btn_clear">Clear</string>
+    <string name="tcp_log_copied">Copied %d logs</string>
 
-    <!-- ─── 服务器配置卡片 ─── -->
-    <string name="config_resolution_mode">分辨率返回模式</string>
-    <string name="config_resolution_desc">控制 wm size 命令返回给 ADB 客户端的分辨率</string>
-    <string name="config_resolution_real">跟随系统真实</string>
-    <string name="config_resolution_landscape">强制横屏 (宽&gt;高)</string>
-    <string name="config_resolution_portrait">强制竖屏 (宽&lt;高)</string>
-    <string name="config_resolution_custom">自定义</string>
-    <string name="config_width">宽度</string>
-    <string name="config_height">高度</string>
-    <string name="config_rotation_mode">截图旋转矫正</string>
-    <string name="config_rotation_desc">控制截图返回给 ADB 客户端时的旋转角度</string>
-    <string name="config_rotation_auto">智能感应 (Display.rotation)</string>
-    <string name="config_rotation_none">不旋转 (原图)</string>
-    <string name="config_rotation_90">强制 90°</string>
-    <string name="config_rotation_270">强制 270°</string>
+    <!-- Server config card -->
+    <string name="config_resolution_mode">Resolution Mode</string>
+    <string name="config_resolution_desc">Controls the resolution returned by the wm size command to ADB clients</string>
+    <string name="config_resolution_real">Follow Real System</string>
+    <string name="config_resolution_landscape">Force Landscape (w&gt;h)</string>
+    <string name="config_resolution_portrait">Force Portrait (w&lt;h)</string>
+    <string name="config_resolution_custom">Custom</string>
+    <string name="config_width">Width</string>
+    <string name="config_height">Height</string>
+    <string name="config_rotation_mode">Screenshot Rotation</string>
+    <string name="config_rotation_desc">Controls rotation angle applied to screenshots returned to ADB clients</string>
+    <string name="config_rotation_auto">Auto (Display.rotation)</string>
+    <string name="config_rotation_none">None (Original)</string>
+    <string name="config_rotation_90">Force 90°</string>
+    <string name="config_rotation_270">Force 270°</string>
 
-    <!-- ─── 截图性能配置 ─── -->
-    <string name="config_perf_title">截图性能</string>
-    <string name="config_smart_scale">智能缩放</string>
-    <string name="config_smart_scale_desc">宽度超过目标值时等比缩放，减小图片体积</string>
-    <string name="config_smart_scale_target">目标宽度:</string>
-    <string name="config_jpeg_quality">JPEG 质量: %d%%</string>
-    <string name="config_jpeg_quality_desc">100%% = 无损，80%% = 有损压缩</string>
+    <!-- Screenshot performance -->
+    <string name="config_perf_title">Screenshot Performance</string>
+    <string name="config_smart_scale">Smart Scale</string>
+    <string name="config_smart_scale_desc">Scale down proportionally when width exceeds the target, reducing payload size</string>
+    <string name="config_smart_scale_target">Target Width:</string>
+    <string name="config_jpeg_quality">JPEG Quality: %d%%</string>
+    <string name="config_jpeg_quality_desc">100%% = lossless, 80%% = lossy compression</string>
 
-    <!-- ─── 调试选项 ─── -->
-    <string name="config_debug_title">调试选项</string>
-    <string name="config_dev_mode">开发者模式</string>
-    <string name="config_dev_mode_desc">显示调试截图、系统日志等开发者工具</string>
-    <string name="config_debug_save">调试存图</string>
-    <string name="config_debug_save_desc">每次截图保存一份到本地</string>
-    <string name="config_verbose_log">详细日志</string>
-    <string name="config_verbose_log_desc">打印截图尺寸、耗时、文件大小等信息</string>
-    <string name="config_chunk_log">分块传输日志</string>
-    <string name="config_chunk_log_desc">打印每个数据块的传输详情（调试用）</string>
+    <!-- Debug options -->
+    <string name="config_debug_title">Debug Options</string>
+    <string name="config_dev_mode">Developer Mode</string>
+    <string name="config_dev_mode_desc">Show debug screenshots, system logs, and other developer tools</string>
+    <string name="config_debug_save">Debug Screenshot Save</string>
+    <string name="config_debug_save_desc">Save a local copy for every screenshot taken</string>
+    <string name="config_verbose_log">Verbose Log</string>
+    <string name="config_verbose_log_desc">Log screenshot dimensions, timing, and file size info</string>
+    <string name="config_chunk_log">Chunk Transfer Log</string>
+    <string name="config_chunk_log_desc">Log details of each data chunk transfer (debug)</string>
 
-    <!-- ─── 系统日志 ─── -->
-    <string name="syslog_title">系统日志 (%d)</string>
-    <string name="syslog_empty">无系统日志</string>
-    <string name="syslog_copied">已复制 %d 条日志</string>
+    <!-- System log -->
+    <string name="syslog_title">System Log (%d)</string>
+    <string name="syslog_empty">No system logs</string>
+    <string name="syslog_copied">Copied %d logs</string>
 
-    <!-- ─── 调试截图 ─── -->
-    <string name="debug_screenshot_title">调试截图 (%d/10)</string>
-    <string name="debug_screenshot_empty">无调试截图（需开启「调试存图」开关）</string>
-    <string name="debug_screenshot_clear">清空全部</string>
-    <string name="debug_screenshot_view">查看</string>
-    <string name="debug_screenshot_share">分享</string>
-    <string name="debug_screenshot_share_title">分享截图</string>
-    <string name="debug_screenshot_open_failed">打开图片失败</string>
+    <!-- Debug screenshots -->
+    <string name="debug_screenshot_title">Debug Screenshots (%d/10)</string>
+    <string name="debug_screenshot_empty">No debug screenshots (enable Debug Screenshot Save first)</string>
+    <string name="debug_screenshot_clear">Clear All</string>
+    <string name="debug_screenshot_view">View</string>
+    <string name="debug_screenshot_share">Share</string>
+    <string name="debug_screenshot_share_title">Share Screenshot</string>
+    <string name="debug_screenshot_open_failed">Failed to open image</string>
 
-    <!-- ─── 首次启动引导 ─── -->
-    <string name="guide_title">使用步骤</string>
-    <string name="guide_step1">① 开启无障碍服务</string>
-    <string name="guide_step2">② 授权屏幕截取</string>
-    <string name="guide_step3">③ 启动 TCP 服务器</string>
-    <string name="guide_desc">通过 TCP 连接即可使用 ADB 客户端控制设备</string>
-    <string name="guide_dismiss">开始使用</string>
+    <!-- First-launch guide -->
+    <string name="guide_title">Getting Started</string>
+    <string name="guide_step1">1. Enable Accessibility Service</string>
+    <string name="guide_step2">2. Authorize Screen Capture</string>
+    <string name="guide_step3">3. Start TCP Server</string>
+    <string name="guide_desc">Connect via any ADB client over TCP to control this device</string>
+    <string name="guide_dismiss">Get Started</string>
 
-    <!-- ─── 崩溃页面 ─── -->
-    <string name="crash_title">⚠ 应用异常</string>
-    <string name="crash_copy_report">📋 复制崩溃报告</string>
-    <string name="crash_copied">崩溃报告已复制到剪贴板</string>
-    <string name="crash_go_back">返回</string>
-    <string name="crash_no_info">没有捕获到崩溃信息</string>
-    <string name="crash_exception_type">异常类型</string>
-    <string name="crash_error_message">错误消息</string>
-    <string name="crash_device_info">📱 设备信息</string>
-    <string name="crash_stack_trace">📄 堆栈跟踪</string>
-    <string name="crash_report_header">=== 应用崩溃报告 ===</string>
-    <string name="crash_report_time">时间</string>
-    <string name="crash_report_thread">线程</string>
-    <string name="crash_report_exception">异常</string>
-    <string name="crash_report_message">消息</string>
-    <string name="crash_report_empty">无崩溃信息</string>
+    <!-- Crash page -->
+    <string name="crash_title">! App Crashed</string>
+    <string name="crash_copy_report">Copy Crash Report</string>
+    <string name="crash_copied">Crash report copied to clipboard</string>
+    <string name="crash_go_back">Go Back</string>
+    <string name="crash_no_info">No crash info captured</string>
+    <string name="crash_exception_type">Exception Type</string>
+    <string name="crash_error_message">Error Message</string>
+    <string name="crash_device_info">Device Info</string>
+    <string name="crash_stack_trace">Stack Trace</string>
+    <string name="crash_report_header">=== App Crash Report ===</string>
+    <string name="crash_report_time">Time</string>
+    <string name="crash_report_thread">Thread</string>
+    <string name="crash_report_exception">Exception</string>
+    <string name="crash_report_message">Message</string>
+    <string name="crash_report_empty">No crash info</string>
 
-    <!-- ─── 无障碍服务描述（系统设置页显示） ─── -->
-    <string name="accessibility_service_description">Virtual ADB Agent 需要无障碍权限来执行点击、滑动等自动化手势操作。此服务仅监听本地 TCP 连接的指令，不会上传任何数据。</string>
+    <!-- Accessibility service description (shown in system settings) -->
+    <string name="accessibility_service_description">Virtual ADB Agent</string>
 
-    <!-- ─── 通知 ─── -->
-    <string name="notification_channel_name">屏幕捕捉服务</string>
-    <string name="notification_channel_description">用于维持屏幕捕捉的前台服务通知</string>
-    <string name="foreground_service_title">屏幕捕捉运行中</string>
-    <string name="foreground_service_text">正在为本地 TCP 客户端提供屏幕截图</string>
+    <!-- Notifications -->
+    <string name="notification_channel_name">Screen Capture Service</string>
+    <string name="notification_channel_description">Foreground service notification for screen capture</string>
+    <string name="foreground_service_title">Screen Capture Running</string>
+    <string name="foreground_service_text">Providing screen capture for local TCP clients</string>
 </resources>
