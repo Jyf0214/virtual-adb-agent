@@ -108,4 +108,13 @@
     <string name="notification_channel_description">Foreground service notification for screen capture</string>
     <string name="foreground_service_title">Screen Capture Running</string>
     <string name="foreground_service_text">Providing screen capture for local TCP clients</string>
+
+    <!-- Terms consent dialog -->
+    <string name="terms_consent_title">Terms of Service &amp; Privacy Policy</string>
+    <string name="terms_consent_message">Welcome to Virtual ADB Agent. Please read the following agreements before using this app:</string>
+    <string name="terms_consent_terms_link">Terms of Service (Tap to view)</string>
+    <string name="terms_consent_privacy_link">Privacy Policy (Tap to view)</string>
+    <string name="terms_consent_agree">Agree &amp; Continue</string>
+    <string name="terms_consent_reject">Reject</string>
+    <string name="terms_consent_reject_toast">Please accept the agreements to use this app</string>
 </resources>

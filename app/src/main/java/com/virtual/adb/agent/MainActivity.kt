@@ -15,6 +15,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.lifecycle.lifecycleScope
 import com.virtual.adb.agent.ui.MainScreen
 import com.virtual.adb.agent.ui.MainViewModel
+import com.virtual.adb.agent.ui.TermsConsentDialog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -77,6 +78,23 @@ class MainActivity : ComponentActivity() {
             }
 
             MaterialTheme(colorScheme = dynamicColor) {
+                // 用户协议同意弹窗（首次启动或未同意时显示）
+                if (!ServerConfig.termsConsentDone) {
+                    TermsConsentDialog(
+                        onAgree = {
+                            ServerConfig.markTermsConsentDone()
+                        },
+                        onReject = {
+                            android.widget.Toast.makeText(
+                                this@MainActivity,
+                                com.virtual.adb.agent.R.string.terms_consent_reject_toast,
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                            finish()
+                        }
+                    )
+                }
+
                 MainScreen(
                     viewModel = viewModel,
                     onOpenA11ySettings = {

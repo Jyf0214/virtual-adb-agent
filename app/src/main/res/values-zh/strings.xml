@@ -108,4 +108,13 @@
     <string name="notification_channel_description">用于维持屏幕捕捉的前台服务通知</string>
     <string name="foreground_service_title">屏幕捕捉运行中</string>
     <string name="foreground_service_text">正在为本地 TCP 客户端提供屏幕截图</string>
+
+    <!-- Terms consent dialog -->
+    <string name="terms_consent_title">用户协议及隐私政策</string>
+    <string name="terms_consent_message">欢迎使用 Virtual ADB Agent。在使用本软件前，请仔细阅读以下协议：</string>
+    <string name="terms_consent_terms_link">用户协议（点击查看）</string>
+    <string name="terms_consent_privacy_link">隐私政策（点击查看）</string>
+    <string name="terms_consent_agree">同意并继续</string>
+    <string name="terms_consent_reject">拒绝</string>
+    <string name="terms_consent_reject_toast">请先同意协议后再使用本应用</string>
 </resources>

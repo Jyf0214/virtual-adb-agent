@@ -78,6 +78,10 @@ object ServerConfig {
     var isFirstLaunchDone = false
         private set
 
+    /** 用户是否已同意协议与隐私政策 */
+    var termsConsentDone = false
+        private set
+
     // ─── 持久化 ─────────────────────────────────────────────
 
     /**
@@ -105,6 +109,7 @@ object ServerConfig {
         enableDebugSave.value = prefs.getBoolean("debug_save", false)
         enableVerboseLog.value = prefs.getBoolean("verbose_log", false)
         isFirstLaunchDone = prefs.getBoolean("first_launch_done", false)
+        termsConsentDone = prefs.getBoolean("terms_consent_done", false)
 
         isLoaded = true
     }
@@ -136,6 +141,16 @@ object ServerConfig {
         isFirstLaunchDone = true
         if (::prefs.isInitialized) {
             prefs.edit().putBoolean("first_launch_done", true).apply()
+        }
+    }
+
+    /**
+     * 标记用户已同意协议与隐私政策
+     */
+    fun markTermsConsentDone() {
+        termsConsentDone = true
+        if (::prefs.isInitialized) {
+            prefs.edit().putBoolean("terms_consent_done", true).apply()
         }
     }
 
