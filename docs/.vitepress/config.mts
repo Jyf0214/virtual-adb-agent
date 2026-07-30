@@ -8,18 +8,50 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
-      { text: '首页', link: '/' },
       { text: '快速开始', link: '/guide/start' },
-    ],
-
-    sidebar: [
       {
-        text: '指南',
+        text: '使用指南',
         items: [
-          { text: '快速开始', link: '/guide/start' },
+          { text: '概览', link: '/usage/' },
+          { text: '基础配置', link: '/usage/configuration' },
+          { text: '命令参考', link: '/usage/commands' },
+          { text: '自动化集成', link: '/usage/automation' },
+        ],
+      },
+      { text: '排错指南', link: '/troubleshoot/' },
+      { text: '架构说明', link: '/architecture/' },
+      {
+        text: '法律',
+        items: [
+          { text: '用户协议', link: '/legal/terms' },
+          { text: '隐私政策', link: '/legal/privacy' },
+          { text: '关于', link: '/about/' },
         ],
       },
     ],
+
+    sidebar: {
+      '/usage/': [
+        {
+          text: '使用指南',
+          items: [
+            { text: '概览', link: '/usage/' },
+            { text: '基础配置', link: '/usage/configuration' },
+            { text: '命令参考', link: '/usage/commands' },
+            { text: '自动化集成', link: '/usage/automation' },
+          ],
+        },
+      ],
+      '/legal/': [
+        {
+          text: '法律',
+          items: [
+            { text: '用户协议', link: '/legal/terms' },
+            { text: '隐私政策', link: '/legal/privacy' },
+          ],
+        },
+      ],
+    },
 
     socialLinks: [
       { icon: 'github', link: 'https://github.com/Jyf0214/virtual-adb-agent' },
